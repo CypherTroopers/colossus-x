@@ -5,6 +5,8 @@ import (
 	"errors"
 	"runtime"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 type Allocation interface {
@@ -100,6 +102,10 @@ func (d *DAG) Close() error {
 }
 
 func GenerateDAG(spec Spec, dag []byte, epochSeed []byte, workers int) error {
+	return generateDAG(spec, dag, epochSeed, workers, nil)
+}
+
+func generateDAG(spec Spec, dag []byte, epochSeed []byte, workers int, done *atomic.Uint64) error {
 	if err := spec.Validate(); err != nil {
 		return err
 	}
@@ -139,6 +145,9 @@ func GenerateDAG(spec Spec, dag []byte, epochSeed []byte, workers int) error {
 				sum := keccak512(tmp)
 				off := i * spec.NodeSize
 				copy(dag[off:off+spec.NodeSize], sum[:])
+				if done != nil {
+					done.Add(1)
+				}
 			}
 		}(from, to)
 	}
@@ -147,11 +156,46 @@ func GenerateDAG(spec Spec, dag []byte, epochSeed []byte, workers int) error {
 }
 
 func PopulateDAG(dag *DAG, epochSeed []byte, workers int) error {
+	return PopulateDAGWithProgress(dag, epochSeed, workers, nil)
+}
+
+func PopulateDAGWithProgress(dag *DAG, epochSeed []byte, workers int, progress func(done, total uint64)) error {
 	if dag == nil {
 		return errors.New("dag cannot be nil")
 	}
-	if dag.spec.Mode == ModeStrict {
-		return GenerateTensorDAG(dag.spec, dag.Bytes(), epochSeed, workers)
+	total := dag.NodeCount()
+	var done atomic.Uint64
+	stop := make(chan struct{})
+	if progress != nil {
+		progress(0, total)
+		go func() {
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					progress(done.Load(), total)
+				case <-stop:
+					return
+				}
+			}
+		}()
+		defer close(stop)
 	}
-	return GenerateDAG(dag.spec, dag.Bytes(), epochSeed, workers)
+	if dag.spec.Mode == ModeStrict {
+		if err := generateTensorDAG(dag.spec, dag.Bytes(), epochSeed, workers, &done); err != nil {
+			return err
+		}
+		if progress != nil {
+			progress(total, total)
+		}
+		return nil
+	}
+	if err := generateDAG(dag.spec, dag.Bytes(), epochSeed, workers, &done); err != nil {
+		return err
+	}
+	if progress != nil {
+		progress(total, total)
+	}
+	return nil
 }

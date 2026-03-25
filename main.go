@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"time"
 
 	cx "colossusx/colossusx"
 )
@@ -165,9 +166,19 @@ func Run(cfg CLIConfig, backend HashBackend) error {
 		return err
 	}
 	defer dag.Close()
-	if err := cx.PopulateDAG(dag, cfg.EpochSeed, cfg.Workers); err != nil {
+	dagStart := time.Now()
+	fmt.Printf("dag generation started (nodes=%d)\n", dag.NodeCount())
+	if err := cx.PopulateDAGWithProgress(dag, cfg.EpochSeed, cfg.Workers, func(done, total uint64) {
+		if total == 0 {
+			return
+		}
+		elapsed := time.Since(dagStart).Round(time.Second)
+		percent := float64(done) * 100 / float64(total)
+		fmt.Printf("dag generation progress: %.1f%% (%d/%d) elapsed=%s\n", percent, done, total, elapsed)
+	}); err != nil {
 		return fmt.Errorf("generate dag: %w", err)
 	}
+	fmt.Printf("dag generation completed in %s\n", time.Since(dagStart).Round(time.Second))
 	if err := backend.Prepare(dag); err != nil {
 		return err
 	}
