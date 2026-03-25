@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	cx "colossusx/colossusx"
@@ -387,10 +388,33 @@ func (v *Validator) cachedDAGForHeader(header types.BlockHeader, allocator cx.Al
 	if err != nil {
 		return nil, err
 	}
-	if err := cx.PopulateDAG(dag, header.EpochSeed[:], v.workers); err != nil {
+	if err := populateDAGWithLogging(dag, header.EpochSeed[:], v.workers); err != nil {
 		_ = dag.Close()
 		return nil, err
 	}
 	cache[key] = dag
 	return dag, nil
+}
+
+func populateDAGWithLogging(dag *cx.DAG, epochSeed []byte, workers int) error {
+	if dag == nil {
+		return fmt.Errorf("dag cannot be nil")
+	}
+	total := dag.NodeCount()
+	start := time.Now()
+	log.Printf("dag generation started nodes=%d workers=%d", total, workers)
+	var finalDone atomic.Uint64
+	err := cx.PopulateDAGWithProgress(dag, epochSeed, workers, func(done, total uint64) {
+		finalDone.Store(done)
+		if total == 0 {
+			return
+		}
+		percent := float64(done) * 100 / float64(total)
+		log.Printf("dag generation progress: %.1f%% (%d/%d) elapsed=%s", percent, done, total, time.Since(start).Round(time.Second))
+	})
+	if err != nil {
+		return err
+	}
+	log.Printf("dag generation completed in %s (%d/%d)", time.Since(start).Round(time.Second), finalDone.Load(), total)
+	return nil
 }
