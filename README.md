@@ -1,3 +1,47 @@
+
+# Check Go version (requires Go 1.23+)
+```
+go version
+```
+
+# Clone repository
+```
+git clone https://github.com/CypherTroopers/colossus-x.git
+```
+
+# Enter project directory
+```
+cd colossus-x
+```
+# Enable Go modules (PowerShell)
+```
+$env:GO111MODULE="on"
+```
+
+# Build binary
+```
+go build -o .\bin\colossusx.exe .\cmd\colossusx
+```
+
+# Run node (devnet, research mode)
+```
+go run .\cmd\colossusd `
+  -network devnet `
+  -mode research `
+  -dag-mib 32768 `
+  -reads 512 `
+  -epoch-blocks 10000 `
+  -mine `
+  -workers 2 `
+  -max-nonces 500000 `
+  -block-time 180s `
+  -datadir .\data\node1 `
+  -listen :30333 `
+  -node-id node1 `
+  -miner-backend unified `
+  -miner-dag-alloc auto
+```
+
 # COLOSSUS-X
 
 COLOSSUS-X is a Go codebase that currently contains **three related layers**:
