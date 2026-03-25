@@ -3,11 +3,16 @@ package colossusx
 import (
 	"encoding/binary"
 	"errors"
+	"sync/atomic"
 
 	"github.com/zeebo/blake3"
 )
 
 func GenerateTensorDAG(spec Spec, dag []byte, epochSeed []byte, workers int) error {
+	return generateTensorDAG(spec, dag, epochSeed, workers, nil)
+}
+
+func generateTensorDAG(spec Spec, dag []byte, epochSeed []byte, workers int, done *atomic.Uint64) error {
 	if err := spec.Validate(); err != nil {
 		return err
 	}
@@ -23,6 +28,9 @@ func GenerateTensorDAG(spec Spec, dag []byte, epochSeed []byte, workers int) err
 		out := make([]byte, spec.NodeSize)
 		xof.Digest().Read(out)
 		copy(dag[off:off+spec.NodeSize], out)
+		if done != nil {
+			done.Add(1)
+		}
 	}
 	return nil
 }
