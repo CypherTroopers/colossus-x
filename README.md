@@ -1,4 +1,4 @@
-
+For Windows powershell
 # Check Go version (requires Go 1.23+)
 ```
 go version
