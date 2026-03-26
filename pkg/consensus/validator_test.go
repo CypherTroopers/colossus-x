@@ -372,3 +372,33 @@ func TestValidateHeaderRejectsIncorrectEpochSeed(t *testing.T) {
 		t.Fatal("expected epoch seed mismatch")
 	}
 }
+
+func TestValidateBlockRejectsBlockHashAboveTarget(t *testing.T) {
+	chainCfg, genesisCfg := testConfig(t)
+	v, err := NewValidator(chainCfg, CPUBackend{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Close()
+	store := chain.NewMemoryStore()
+
+	genesis, _, err := v.SealBlock(types.NewGenesisBlock(genesisCfg), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := v.InsertBlock(store, genesis); err != nil {
+		t.Fatal(err)
+	}
+
+	next := types.Block{Header: testBlockHeader(chainCfg, genesis)}
+	sealed, _, err := v.SealBlock(next, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed.Header.Target = cx.Target{}
+	sealed.Header.Target[31] = 0x01
+
+	if err := v.ValidateBlock(store, sealed); err == nil {
+		t.Fatal("expected block hash based validation failure")
+	}
+}

@@ -1,7 +1,6 @@
 package consensus
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -283,13 +282,9 @@ func (v *Validator) Close() error {
 }
 
 func (v *Validator) validatePoW(header types.BlockHeader) error {
-	dag, err := v.validationDAGForHeader(header)
-	if err != nil {
-		return err
-	}
-	hash := v.backend.Hash(header.EncodeForMining(), cx.NewUint64Nonce(header.Nonce), dag)
-	if !cx.LessOrEqualBE(hash.Pow256, header.Target) {
-		return fmt.Errorf("%w: pow=%s target=%s", ErrInvalidPoW, hex.EncodeToString(hash.Pow256[:]), header.Target.String())
+	blockHash := header.HeaderHash()
+	if !cx.LessOrEqualBE(blockHash, header.Target) {
+		return fmt.Errorf("%w: block_hash=%s target=%s", ErrInvalidPoW, blockHash.String(), header.Target.String())
 	}
 	return nil
 }
