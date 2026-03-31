@@ -83,6 +83,124 @@ go run ./cmd/colossusx daemon \
 
 ---
 
+## 2.5 CLI 入口（`mine` / `daemon` / `verify`）の実行コマンド集
+
+Colossus-X は **単一バイナリに複数入口を持つ後者寄り構成**です。  
+用途ごとに `mine` / `daemon` / `verify` を使い分けます。
+
+### 2.5-1. `mine`（マイニング実行）
+
+最小例:
+
+```bash
+go run ./cmd/colossusx mine \
+  -mode strict \
+  -backend opencl \
+  -dag-alloc auto \
+  -workers 16 \
+  -max-nonces 200000
+```
+
+全部乗っけ例（主要フラグ一式）:
+
+```bash
+go run ./cmd/colossusx mine \
+  -mode strict \
+  -backend opencl \
+  -dag-alloc auto \
+  -initial-dag-mib 1024 \
+  -dag-growth-mib-per-epoch 8 \
+  -workers 16 \
+  -header 0000000000000000000000000000000000000000000000000000000000000000 \
+  -epoch-seed 0000000000000000000000000000000000000000000000000000000000000000 \
+  -target 00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+  -start-nonce 0 \
+  -max-nonces 200000 \
+  -bench=false
+```
+
+### 2.5-2. `daemon`（ノード起動）
+
+最小例:
+
+```bash
+go run ./cmd/colossusx daemon \
+  -mode strict \
+  -network mainnet \
+  -datadir ./data \
+  -listen :30333
+```
+
+全部乗っけ例（主要フラグ一式）:
+
+```bash
+go run ./cmd/colossusx daemon \
+  -mode strict \
+  -network mainnet \
+  -initial-dag-mib 1024 \
+  -dag-growth-mib-per-epoch 8 \
+  -mine=true \
+  -workers 16 \
+  -max-nonces 500000 \
+  -block-time 500ms \
+  -genesis-message "colossusx mainnet genesis" \
+  -datadir ./data \
+  -listen :30333 \
+  -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
+  -node-id node-01 \
+  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+  -miner-backend opencl \
+  -miner-dag-alloc auto
+```
+
+採掘しない検証/中継ノードとして動かす例（全部乗っけ系）:
+
+```bash
+go run ./cmd/colossusx daemon \
+  -mode strict \
+  -network mainnet \
+  -initial-dag-mib 1024 \
+  -dag-growth-mib-per-epoch 8 \
+  -no-mine \
+  -workers 16 \
+  -max-nonces 500000 \
+  -block-time 500ms \
+  -genesis-message "colossusx mainnet genesis" \
+  -datadir ./data \
+  -listen :30333 \
+  -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
+  -node-id node-01 \
+  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+  -miner-backend opencl \
+  -miner-dag-alloc auto
+```
+
+### 2.5-3. `verify`（PoW 検証）
+
+ヘッダー検証:
+
+```bash
+go run ./cmd/colossusx verify \
+  -mode strict \
+  -header ./examples/header.json \
+  -initial-dag-mib 1024 \
+  -dag-growth-mib-per-epoch 8
+```
+
+ブロック検証:
+
+```bash
+go run ./cmd/colossusx verify \
+  -mode strict \
+  -block ./examples/block.json \
+  -initial-dag-mib 1024 \
+  -dag-growth-mib-per-epoch 8
+```
+
+> `verify` は `-header` と `-block` の同時指定不可（どちらか片方のみ）。
+
+---
+
 ## 3. CLI フラグ一覧（詳細）
 
 ## 3-1. `daemon` フラグ
