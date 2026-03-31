@@ -12,12 +12,28 @@ import (
 const (
 	strictV2SeedCacheBytes   = 512 * 1024 * 1024
 	strictV2SeedCacheEntry   = 64
+	strictV2MinCacheEntries  = 1024
 	strictV2SeedCachePasses  = 3
 	strictV2CellCacheLookups = 256
 )
 
 func strictV2CacheEntriesForSpec(spec Spec) int {
-	return strictV2SeedCacheBytes / strictV2SeedCacheEntry
+	bytes := uint64(strictV2SeedCacheBytes)
+	// Keep production strict profile at the full 512 MiB cache, while allowing
+	// smaller deterministic fixtures used by tests and simulations to scale down.
+	if initial := spec.initialDAGSize(); initial > 0 && initial < StrictInitialDAGSizeBytes {
+		scaled := initial / 160 // preserve 512 MiB : 80 GiB ratio
+		minBytes := uint64(strictV2MinCacheEntries * strictV2SeedCacheEntry)
+		if scaled < minBytes {
+			scaled = minBytes
+		}
+		bytes = scaled
+	}
+	entries := int(bytes / strictV2SeedCacheEntry)
+	if entries < strictV2MinCacheEntries {
+		return strictV2MinCacheEntries
+	}
+	return entries
 }
 
 func buildStrictV2SeedCache(seed []byte, entries int) [][64]byte {

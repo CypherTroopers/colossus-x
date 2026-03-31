@@ -116,16 +116,17 @@ func TestStrictModeDynamicDAGProfile(t *testing.T) {
 	}
 }
 
-func TestGenerateDAGUsesKeccak512(t *testing.T) {
+func TestGenerateDAGUsesStrictV2NodeGeneration(t *testing.T) {
 	spec := testSpec()
 	seed := []byte("0123456789abcdef0123456789abcdef")
 	dag := make([]byte, spec.DAGSizeBytes)
 	if err := GenerateDAG(spec, dag, seed, 1); err != nil {
 		t.Fatalf("GenerateDAG: %v", err)
 	}
-	want := keccak512(append(append([]byte{}, seed...), make([]byte, 8)...))
-	if got := dag[:64]; !bytes.Equal(got, want[:]) {
-		t.Fatalf("node 0 mismatch: got=%x want=%x", got, want[:])
+	cache := buildStrictV2SeedCache(seed, strictV2CacheEntriesForSpec(spec))
+	want := strictV2Node(0, spec.NodeSize, cache)
+	if got := dag[:spec.NodeSize]; !bytes.Equal(got, want) {
+		t.Fatalf("node 0 mismatch: got=%x want=%x", got, want)
 	}
 }
 
