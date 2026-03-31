@@ -16,18 +16,20 @@ func ValidateStrictProductionConfig(mode cx.Mode, backend BackendMode, dagAlloc 
 		alloc = "auto"
 	}
 	switch backend {
-	case BackendCPU:
-		return fmt.Errorf("strict production requires GPU-capable backends; cpu is not allowed")
-	case BackendUnified, BackendGPU, BackendCUDA, BackendOpenCL, BackendMetal:
+	case BackendCPU, BackendUnified, BackendGPU, BackendCUDA, BackendOpenCL, BackendMetal:
 	default:
 		return fmt.Errorf("unsupported strict backend %q", backend)
 	}
 	switch alloc {
-	case "auto", "cuda-managed", "opencl-svm", "metal-shared":
+	case "auto", "go-heap", "pinned-host", "cuda-managed", "opencl-svm", "metal-shared":
 	default:
-		return fmt.Errorf("strict production disallows dag allocator %q (allowed: auto, cuda-managed, opencl-svm, metal-shared)", dagAlloc)
+		return fmt.Errorf("strict production disallows dag allocator %q (allowed: auto, go-heap, pinned-host, cuda-managed, opencl-svm, metal-shared)", dagAlloc)
 	}
 	switch backend {
+	case BackendCPU:
+		if alloc != "auto" && alloc != "go-heap" && alloc != "pinned-host" {
+			return fmt.Errorf("cpu backend requires auto, go-heap, or pinned-host dag allocator")
+		}
 	case BackendCUDA:
 		if alloc == "opencl-svm" || alloc == "metal-shared" {
 			return fmt.Errorf("cuda backend requires auto or cuda-managed dag allocator")

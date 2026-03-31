@@ -2,10 +2,13 @@ package main
 
 import "testing"
 
-func TestParseDaemonFlagsRejectsCPUBackendInStrictProduction(t *testing.T) {
+func TestParseDaemonFlagsAllowsCPUBackendInStrictProduction(t *testing.T) {
 	cfg, err := parseDaemonFlags([]string{"-miner-backend=cpu", "-miner-dag-alloc=go-heap"})
-	if err == nil {
-		t.Fatalf("expected strict production config validation error, got cfg=%+v", cfg)
+	if err != nil {
+		t.Fatalf("expected strict production config validation to allow cpu backend, got err=%v", err)
+	}
+	if cfg.MinerBackend != "cpu" {
+		t.Fatalf("expected cpu miner backend, got %q", cfg.MinerBackend)
 	}
 }
 
