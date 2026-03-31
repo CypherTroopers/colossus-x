@@ -40,7 +40,7 @@ type Server struct {
 
 func NewServer(cfg Config) *Server {
 	if cfg.Version == "" {
-		cfg.Version = "colossusd/0.1"
+		cfg.Version = "colossusx/0.1"
 	}
 	return &Server{cfg: cfg, peers: NewPeerSet()}
 }
