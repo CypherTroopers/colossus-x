@@ -9,6 +9,7 @@ import (
 	"time"
 
 	cx "colossusx/colossusx"
+	"golang.org/x/crypto/sha3"
 )
 
 type Hash [32]byte
@@ -114,8 +115,12 @@ func NewGenesisBlock(cfg GenesisConfig) Block {
 	return Block{Header: BlockHeader{Version: 1, AlgorithmVersion: resolved.AlgorithmVersion, Height: 0, ParentHash: Hash{}, Timestamp: cfg.Timestamp, Target: cfg.Bits, Nonce: 0, EpochSeed: EpochSeedForHeight(resolved, 0), DAGSizeBytes: resolved.DAGSizeBytes, DAGMerkleRoot: Hash{}, TxRoot: txRoot, StateRoot: stateRoot}}
 }
 func EpochSeedForHeight(spec cx.Spec, height uint64) Hash {
-	var seedMaterial [16]byte
-	binary.BigEndian.PutUint64(seedMaterial[:8], height/spec.EpochBlocks)
-	binary.BigEndian.PutUint64(seedMaterial[8:], spec.DAGSizeForHeight(height))
-	return sha256.Sum256(seedMaterial[:])
+	var seedMaterial [40]byte
+	epoch := uint64(0)
+	if spec.EpochBlocks != 0 {
+		epoch = height / spec.EpochBlocks
+	}
+	binary.BigEndian.PutUint64(seedMaterial[:8], epoch)
+	copy(seedMaterial[8:], spec.GenesisHash[:])
+	return sha3.Sum256(seedMaterial[:])
 }
