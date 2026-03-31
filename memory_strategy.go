@@ -127,7 +127,7 @@ func (e notImplementedError) Error() string { return "not implemented: " + strin
 func ErrNotImplemented(s string) error      { return notImplementedError(s) }
 
 func ResolveDAGStrategy(backend BackendMode, runtime runtimeState, dagAlloc string) (MemoryStrategy, error) {
-	return ResolveDAGStrategyForMode(cx.ModeStrict, backend, runtime, dagAlloc)
+	return ResolveDAGStrategyForMode(cx.ModeColossusX, backend, runtime, dagAlloc)
 }
 func ResolveDAGStrategyForMode(mode cx.Mode, backend BackendMode, runtime runtimeState, dagAlloc string) (MemoryStrategy, error) {
 	return dagStrategyResolver{mode: mode, backend: backend, runtime: runtime}.Resolve(dagAlloc)
@@ -140,14 +140,14 @@ func (r dagStrategyResolver) Resolve(dagAlloc string) (MemoryStrategy, error) {
 	if choice == "" {
 		choice = "auto"
 	}
-	if r.mode == "" || r.mode == cx.ModeStrict {
-		return r.resolveStrict(choice)
+	if r.mode == "" || r.mode == cx.ModeColossusX {
+		return r.resolveColossusX(choice)
 	}
 	return nil, fmt.Errorf("unsupported mode %q", r.mode)
 }
-func (r dagStrategyResolver) resolveStrict(choice string) (MemoryStrategy, error) {
+func (r dagStrategyResolver) resolveColossusX(choice string) (MemoryStrategy, error) {
 	if choice == "auto" {
-		s := r.autoStrictStrategies()
+		s := r.autoColossusXStrategies()
 		return fallbackMemoryStrategy{name: "auto", strategies: s}, nil
 	}
 	switch choice {
@@ -168,9 +168,9 @@ func (r dagStrategyResolver) resolveStrict(choice string) (MemoryStrategy, error
 			return MetalSharedMemory{Context: c}, nil
 		}
 	}
-	return nil, fmt.Errorf("strict mode requires one of: auto, go-heap, pinned-host, cuda-managed, opencl-svm, metal-shared")
+	return nil, fmt.Errorf("colossusx mode requires one of: auto, go-heap, pinned-host, cuda-managed, opencl-svm, metal-shared")
 }
-func (r dagStrategyResolver) autoStrictStrategies() []MemoryStrategy {
+func (r dagStrategyResolver) autoColossusXStrategies() []MemoryStrategy {
 	strategies := make([]MemoryStrategy, 0, 4)
 	if o, ok := r.cudaDeviceOrdinal(); ok {
 		strategies = append(strategies, CUDAManagedMemory{DeviceOrdinal: o, Ready: true})

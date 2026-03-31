@@ -17,7 +17,7 @@ func (a *testAllocation) Free() error   { a.freed = true; return nil }
 func (a *testAllocation) Name() string  { return "test-allocation" }
 
 func TestNewDAGWithStrategyGoHeap(t *testing.T) {
-	spec := Spec{Mode: cx.ModeStrict, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
+	spec := Spec{Mode: cx.ModeColossusX, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
 	dag, err := NewDAGWithStrategy(spec, GoHeapMemory{})
 	if err != nil {
 		t.Fatalf("NewDAGWithStrategy: %v", err)
@@ -29,7 +29,7 @@ func TestNewDAGWithStrategyGoHeap(t *testing.T) {
 }
 
 func TestUnsupportedStrategyReturnsExplicitError(t *testing.T) {
-	alloc, err := NewDAGWithStrategy(Spec{Mode: cx.ModeStrict, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}, PinnedMemory{})
+	alloc, err := NewDAGWithStrategy(Spec{Mode: cx.ModeColossusX, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}, PinnedMemory{})
 	if err != nil {
 		t.Fatalf("expected pinned strategy to allocate, got: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestUnsupportedStrategyReturnsExplicitError(t *testing.T) {
 
 func TestDAGCloseReleasesOwnedAllocation(t *testing.T) {
 	alloc := &testAllocation{buf: make([]byte, 1024)}
-	dag, err := NewDAGWithAllocation(Spec{Mode: cx.ModeStrict, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}, alloc, true)
+	dag, err := NewDAGWithAllocation(Spec{Mode: cx.ModeColossusX, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}, alloc, true)
 	if err != nil {
 		t.Fatalf("NewDAGWithAllocation: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestAllocatorResolutionDependsOnRuntimeInitialization(t *testing.T) {
 
 func TestNewDAGWithAllocationRejectsShortBuffer(t *testing.T) {
 	alloc := &testAllocation{buf: make([]byte, 8)}
-	_, err := NewDAGWithAllocation(Spec{Mode: cx.ModeStrict, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}, alloc, false)
+	_, err := NewDAGWithAllocation(Spec{Mode: cx.ModeColossusX, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}, alloc, false)
 	if err == nil {
 		t.Fatal("expected short allocation to fail")
 	}
@@ -132,26 +132,26 @@ func TestValidationReuseCapabilityForManagedAllocators(t *testing.T) {
 	}
 }
 
-func TestResolveDAGStrategyForModeStrictAllowsHostAllocators(t *testing.T) {
-	if _, err := ResolveDAGStrategyForMode(cx.ModeStrict, BackendOpenCL, nil, "go-heap"); err != nil {
-		t.Fatalf("expected strict mode to allow go-heap, got: %v", err)
+func TestResolveDAGStrategyForModeColossusXAllowsHostAllocators(t *testing.T) {
+	if _, err := ResolveDAGStrategyForMode(cx.ModeColossusX, BackendOpenCL, nil, "go-heap"); err != nil {
+		t.Fatalf("expected colossusx mode to allow go-heap, got: %v", err)
 	}
-	if _, err := ResolveDAGStrategyForMode(cx.ModeStrict, BackendOpenCL, nil, "pinned-host"); err != nil {
-		t.Fatalf("expected strict mode to allow pinned-host, got: %v", err)
+	if _, err := ResolveDAGStrategyForMode(cx.ModeColossusX, BackendOpenCL, nil, "pinned-host"); err != nil {
+		t.Fatalf("expected colossusx mode to allow pinned-host, got: %v", err)
 	}
 }
 
-func TestValidateStrictProductionConfigEnforcesProductionRules(t *testing.T) {
-	if err := ValidateStrictProductionConfig(cx.ModeStrict, BackendCPU, "auto"); err != nil {
+func TestValidateColossusXProductionConfigEnforcesProductionRules(t *testing.T) {
+	if err := ValidateColossusXProductionConfig(cx.ModeColossusX, BackendCPU, "auto"); err != nil {
 		t.Fatalf("expected cpu backend auto allocator to pass validation, got: %v", err)
 	}
-	if err := ValidateStrictProductionConfig(cx.ModeStrict, BackendCPU, "cuda-managed"); err == nil {
+	if err := ValidateColossusXProductionConfig(cx.ModeColossusX, BackendCPU, "cuda-managed"); err == nil {
 		t.Fatal("expected cpu backend to reject gpu-only allocator")
 	}
-	if err := ValidateStrictProductionConfig(cx.ModeStrict, BackendUnified, "go-heap"); err == nil {
-		t.Fatal("expected host allocator to be rejected in strict production")
+	if err := ValidateColossusXProductionConfig(cx.ModeColossusX, BackendUnified, "go-heap"); err == nil {
+		t.Fatal("expected host allocator to be rejected in colossusx production")
 	}
-	if err := ValidateStrictProductionConfig(cx.ModeStrict, BackendUnified, "auto"); err != nil {
+	if err := ValidateColossusXProductionConfig(cx.ModeColossusX, BackendUnified, "auto"); err != nil {
 		t.Fatalf("expected unified backend auto allocator to pass validation, got: %v", err)
 	}
 }

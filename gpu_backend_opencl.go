@@ -104,7 +104,7 @@ func (d *openclDispatcher) Prepare(dag *DAG, cfg gpuKernelConfig) error {
 }
 
 func (d *openclDispatcher) Dispatch(header []byte, startNonce cx.Nonce, batch int, dag *DAG) (GPUDispatchResult, error) {
-	strict := dag != nil && dag.Spec().Mode == cx.ModeStrict
+	colossusx := dag != nil && dag.Spec().Mode == cx.ModeColossusX
 	plan := d.plan
 	if batch <= 0 {
 		plan.UsedFallback = true
@@ -145,10 +145,10 @@ func (d *openclDispatcher) Dispatch(header []byte, startNonce cx.Nonce, batch in
 			}
 		}
 	}
-	if strict {
+	if colossusx {
 		plan.UsedFallback = false
 		plan.ExecutionPath = GPUExecutionPathDeviceKernel
-		return GPUDispatchResult{Plan: plan}, fmt.Errorf("strict mode requires successful OpenCL device-kernel execution; host-reference fallback is forbidden")
+		return GPUDispatchResult{Plan: plan}, fmt.Errorf("colossusx mode requires successful OpenCL device-kernel execution; host-reference fallback is forbidden")
 	}
 	results := make([]HashResult, 0, batch)
 	view, err := newUnifiedMemoryDAGViewFromBytes(dag.Spec(), raw.Bytes)

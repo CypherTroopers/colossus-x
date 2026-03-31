@@ -2,10 +2,10 @@ package main
 
 import "testing"
 
-func TestParseDaemonFlagsAllowsCPUBackendInStrictProduction(t *testing.T) {
+func TestParseDaemonFlagsAllowsCPUBackendInColossusXProduction(t *testing.T) {
 	cfg, err := parseDaemonFlags([]string{"-miner-backend=cpu", "-miner-dag-alloc=go-heap"})
 	if err != nil {
-		t.Fatalf("expected strict production config validation to allow cpu backend, got err=%v", err)
+		t.Fatalf("expected colossusx production config validation to allow cpu backend, got err=%v", err)
 	}
 	if cfg.MinerBackend != "cpu" {
 		t.Fatalf("expected cpu miner backend, got %q", cfg.MinerBackend)
@@ -14,7 +14,7 @@ func TestParseDaemonFlagsAllowsCPUBackendInStrictProduction(t *testing.T) {
 
 func TestInitializeMiningUnifiedGoHeap(t *testing.T) {
 	cfg := daemonConfig{MinerBackend: "unified", MinerDAGAlloc: "go-heap"}
-	cfg.Chain.Spec.Mode = "strict"
+	cfg.Chain.Spec.Mode = "colossusx"
 	backend, strategy, status, err := initializeMining(cfg)
 	if err != nil {
 		t.Fatalf("initializeMining: %v", err)
@@ -32,7 +32,7 @@ func TestInitializeMiningUnifiedGoHeap(t *testing.T) {
 
 func TestInitializeMiningExplicitGPUAllocatorRequest(t *testing.T) {
 	cfg := daemonConfig{MinerBackend: "gpu", MinerDAGAlloc: "opencl-svm"}
-	cfg.Chain.Spec.Mode = "strict"
+	cfg.Chain.Spec.Mode = "colossusx"
 	_, _, _, err := initializeMining(cfg)
 	if err == nil {
 		t.Fatal("expected explicit gpu/opencl-svm request to fail gracefully in test environment")

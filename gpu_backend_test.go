@@ -96,7 +96,7 @@ func (r *fakeOpenCLRuntime) MetalContext() (MetalContext, bool) { return MetalCo
 
 func testResearchDAG(t *testing.T) *DAG {
 	t.Helper()
-	spec := Spec{Mode: cx.ModeStrict, DAGSizeBytes: 1024 * 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 8, EpochBlocks: DefaultEpochBlocks}
+	spec := Spec{Mode: cx.ModeColossusX, DAGSizeBytes: 1024 * 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 8, EpochBlocks: DefaultEpochBlocks}
 	dag, err := NewDAG(spec)
 	if err != nil {
 		t.Fatalf("NewDAG: %v", err)
@@ -143,7 +143,7 @@ func TestGPUHashMatchesCPUReference(t *testing.T) {
 }
 
 func TestSuccessfulGPURunAvoidsNormalFallback(t *testing.T) {
-	spec := Spec{Mode: cx.ModeStrict, DAGSizeBytes: 64 * 64, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
+	spec := Spec{Mode: cx.ModeColossusX, DAGSizeBytes: 64 * 64, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
 	dag, err := NewDAG(spec)
 	if err != nil {
 		t.Fatalf("NewDAG: %v", err)
@@ -174,7 +174,7 @@ func TestSuccessfulGPURunAvoidsNormalFallback(t *testing.T) {
 	}
 }
 
-func TestOpenCLDispatcherSVMRejectsHostFallbackInStrictMode(t *testing.T) {
+func TestOpenCLDispatcherSVMRejectsHostFallbackInColossusXMode(t *testing.T) {
 	dag := testResearchDAG(t)
 	defer dag.Close()
 	runtime := &fakeOpenCLRuntime{available: true, svm: true}
@@ -186,7 +186,7 @@ func TestOpenCLDispatcherSVMRejectsHostFallbackInStrictMode(t *testing.T) {
 	}
 	result, err := dispatcher.Dispatch([]byte("header"), cx.NewUint64Nonce(10), 3, dag)
 	if err == nil {
-		t.Fatal("expected strict mode to reject host-reference fallback when device dispatch does not run")
+		t.Fatal("expected colossusx mode to reject host-reference fallback when device dispatch does not run")
 	}
 	plan := result.Plan
 	if !plan.SVMEnabled {
@@ -256,7 +256,7 @@ func TestOpenCLDispatcherReportsDeviceKernelOnlyAfterSuccessfulDeviceDispatch(t 
 	}
 }
 
-func TestOpenCLDispatcherRejectsFallbackWhenDeviceKernelFailsInStrictMode(t *testing.T) {
+func TestOpenCLDispatcherRejectsFallbackWhenDeviceKernelFailsInColossusXMode(t *testing.T) {
 	dag := testResearchDAG(t)
 	defer dag.Close()
 	runtime := &fakeOpenCLRuntime{available: true, svm: true}
@@ -267,7 +267,7 @@ func TestOpenCLDispatcherRejectsFallbackWhenDeviceKernelFailsInStrictMode(t *tes
 	}
 	_, err := dispatcher.Dispatch([]byte("header"), cx.NewUint64Nonce(10), 3, dag)
 	if err == nil {
-		t.Fatal("expected strict mode to reject host fallback after device-kernel failure")
+		t.Fatal("expected colossusx mode to reject host fallback after device-kernel failure")
 	}
 }
 
@@ -290,7 +290,7 @@ func TestGPUBackendPrepareFailsHardWhenRuntimeUnavailable(t *testing.T) {
 	}
 }
 
-func TestOpenCLDispatcherRejectsHostFallbackWithoutSVMInStrictMode(t *testing.T) {
+func TestOpenCLDispatcherRejectsHostFallbackWithoutSVMInColossusXMode(t *testing.T) {
 	dag := testResearchDAG(t)
 	defer dag.Close()
 	runtime := &fakeOpenCLRuntime{available: true, svm: false}
@@ -302,7 +302,7 @@ func TestOpenCLDispatcherRejectsHostFallbackWithoutSVMInStrictMode(t *testing.T)
 	}
 	result, err := dispatcher.Dispatch([]byte("header"), cx.NewUint64Nonce(10), 3, dag)
 	if err == nil {
-		t.Fatal("expected strict mode to reject host-reference fallback when SVM is unavailable")
+		t.Fatal("expected colossusx mode to reject host-reference fallback when SVM is unavailable")
 	}
 	plan := result.Plan
 	if plan.CopiedDAG || plan.DeviceDAGCopyPerformed {

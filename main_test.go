@@ -17,31 +17,31 @@ func TestParseBackendMode(t *testing.T) {
 	}
 }
 
-func TestParseCLIConfigStrictModeAllowsDynamicDAGProfile(t *testing.T) {
-	cfg, err := ParseCLIConfig([]string{"-mode", "strict"})
+func TestParseCLIConfigColossusXModeAllowsDynamicDAGProfile(t *testing.T) {
+	cfg, err := ParseCLIConfig([]string{"-mode", "colossusx"})
 	if err != nil {
 		t.Fatalf("ParseCLIConfig: %v", err)
 	}
 	if cfg.Spec.InitialDAGSizeBytes != 80*1024*1024*1024 {
-		t.Fatalf("unexpected strict initial DAG size: %d", cfg.Spec.InitialDAGSizeBytes)
+		t.Fatalf("unexpected colossusx initial DAG size: %d", cfg.Spec.InitialDAGSizeBytes)
 	}
 	if cfg.Spec.DAGGrowthBytesPerEpoch != 256*1024*1024 {
-		t.Fatalf("unexpected strict DAG growth: %d", cfg.Spec.DAGGrowthBytesPerEpoch)
+		t.Fatalf("unexpected colossusx DAG growth: %d", cfg.Spec.DAGGrowthBytesPerEpoch)
 	}
 }
 
-func TestParseCLIConfigStrictModeAllowsDagSizeOverrides(t *testing.T) {
-	cfg, err := ParseCLIConfig([]string{"-mode", "strict", "-initial-dag-mib", "1", "-dag-growth-mib-per-epoch", "2"})
+func TestParseCLIConfigColossusXModeAllowsDagSizeOverrides(t *testing.T) {
+	cfg, err := ParseCLIConfig([]string{"-mode", "colossusx", "-initial-dag-mib", "1", "-dag-growth-mib-per-epoch", "2"})
 	if err != nil {
 		t.Fatalf("ParseCLIConfig: %v", err)
 	}
-	if cfg.Spec.Mode != cx.ModeStrict || cfg.Spec.InitialDAGSizeBytes != 1024*1024 || cfg.Spec.DAGGrowthBytesPerEpoch != 2*1024*1024 {
-		t.Fatalf("unexpected strict spec: %+v", cfg.Spec)
+	if cfg.Spec.Mode != cx.ModeColossusX || cfg.Spec.InitialDAGSizeBytes != 1024*1024 || cfg.Spec.DAGGrowthBytesPerEpoch != 2*1024*1024 {
+		t.Fatalf("unexpected colossusx spec: %+v", cfg.Spec)
 	}
 }
 
 func TestCPUAndUnifiedBackendsProduceSameHash(t *testing.T) {
-	spec := Spec{Mode: cx.ModeStrict, DAGSizeBytes: 1024 * 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 8, EpochBlocks: DefaultEpochBlocks}
+	spec := Spec{Mode: cx.ModeColossusX, DAGSizeBytes: 1024 * 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 8, EpochBlocks: DefaultEpochBlocks}
 	dag, err := NewDAG(spec)
 	if err != nil {
 		t.Fatalf("NewDAG: %v", err)
@@ -71,7 +71,7 @@ func TestCPUAndUnifiedBackendsProduceSameHash(t *testing.T) {
 }
 
 func TestUnifiedBackendUsesDAGAllocationDirectly(t *testing.T) {
-	spec := Spec{Mode: cx.ModeStrict, DAGSizeBytes: 64 * 8, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
+	spec := Spec{Mode: cx.ModeColossusX, DAGSizeBytes: 64 * 8, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
 	dag, err := NewDAG(spec)
 	if err != nil {
 		t.Fatalf("NewDAG: %v", err)
@@ -94,7 +94,7 @@ func TestUnifiedBackendUsesDAGAllocationDirectly(t *testing.T) {
 }
 
 func TestCPUBackendCopiesPreparedDAG(t *testing.T) {
-	spec := Spec{Mode: cx.ModeStrict, DAGSizeBytes: 64 * 8, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
+	spec := Spec{Mode: cx.ModeColossusX, DAGSizeBytes: 64 * 8, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
 	dag, err := NewDAG(spec)
 	if err != nil {
 		t.Fatalf("NewDAG: %v", err)
@@ -117,8 +117,8 @@ func TestCPUBackendCopiesPreparedDAG(t *testing.T) {
 }
 
 func TestRunInitializesBackendRuntimeBeforeResolvingAllocator(t *testing.T) {
-	spec := Spec{Mode: cx.ModeStrict, DAGSizeBytes: 64 * 64, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
-	cfg := CLIConfig{Mode: cx.ModeStrict, Backend: BackendGPU, DAGAlloc: "auto", Spec: spec, Workers: 1, Header: []byte("01"), EpochSeed: []byte("seedseedseedseedseedseedseedseed"), Target: cx.Target{}, MaxNonces: 1, BenchOnly: true}
+	spec := Spec{Mode: cx.ModeColossusX, DAGSizeBytes: 64 * 64, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
+	cfg := CLIConfig{Mode: cx.ModeColossusX, Backend: BackendGPU, DAGAlloc: "auto", Spec: spec, Workers: 1, Header: []byte("01"), EpochSeed: []byte("seedseedseedseedseedseedseedseed"), Target: cx.Target{}, MaxNonces: 1, BenchOnly: true}
 	backend := &fakeGPUBackend{}
 	if err := Run(cfg, backend); err != nil {
 		t.Fatalf("run: %v", err)
@@ -131,30 +131,30 @@ func TestRunInitializesBackendRuntimeBeforeResolvingAllocator(t *testing.T) {
 	}
 }
 
-func TestStrictSpecLocksSectionTwoConstants(t *testing.T) {
-	spec := cx.StrictSpec()
-	if spec.ReadsPerHash != cx.StrictReadsPerHash {
-		t.Fatalf("expected strict reads/hash %d, got %d", cx.StrictReadsPerHash, spec.ReadsPerHash)
+func TestColossusXSpecLocksSectionTwoConstants(t *testing.T) {
+	spec := cx.ColossusXSpec()
+	if spec.ReadsPerHash != cx.ColossusXReadsPerHash {
+		t.Fatalf("expected colossusx reads/hash %d, got %d", cx.ColossusXReadsPerHash, spec.ReadsPerHash)
 	}
 	if spec.ReadsPerHash != 128 {
-		t.Fatalf("expected strict spec to preserve v2 reads/hash target, got %d", spec.ReadsPerHash)
+		t.Fatalf("expected colossusx spec to preserve v2 reads/hash target, got %d", spec.ReadsPerHash)
 	}
 	if spec.EpochBlocks != 7200 {
-		t.Fatalf("expected strict epoch blocks 7200, got %d", spec.EpochBlocks)
+		t.Fatalf("expected colossusx epoch blocks 7200, got %d", spec.EpochBlocks)
 	}
 }
 
-func TestStrictDAGRequiresFullLogicalImage(t *testing.T) {
-	spec := cx.StrictSpec()
+func TestColossusXDAGRequiresFullLogicalImage(t *testing.T) {
+	spec := cx.ColossusXSpec()
 	alloc := &testAllocation{buf: make([]byte, 1024)}
 	_, err := NewDAGWithAllocation(spec, alloc, false)
 	if err == nil {
-		t.Fatal("expected strict DAG allocation to require the full logical DAG image")
+		t.Fatal("expected colossusx DAG allocation to require the full logical DAG image")
 	}
 }
 
-func TestParseCLIConfigStrictModeDagMibAliasSetsInitialDag(t *testing.T) {
-	cfg, err := ParseCLIConfig([]string{"-mode", "strict", "-dag-mib", "3"})
+func TestParseCLIConfigColossusXModeDagMibAliasSetsInitialDag(t *testing.T) {
+	cfg, err := ParseCLIConfig([]string{"-mode", "colossusx", "-dag-mib", "3"})
 	if err != nil {
 		t.Fatalf("ParseCLIConfig: %v", err)
 	}

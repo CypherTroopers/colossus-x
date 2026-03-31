@@ -13,11 +13,11 @@ import (
 )
 
 const (
-	DefaultInitialDAGMiB = cx.StrictInitialDAGSizeBytes / (1024 * 1024)
+	DefaultInitialDAGMiB = cx.ColossusXInitialDAGSizeBytes / (1024 * 1024)
 	DefaultDAGGrowthMiB  = cx.DefaultDAGGrowthBytesPerEpoch / (1024 * 1024)
-	DefaultReadsPerH     = cx.StrictReadsPerHash
-	DefaultNodeSize      = cx.StrictNodeSize
-	DefaultEpochBlocks   = cx.StrictEpochBlocks
+	DefaultReadsPerH     = cx.ColossusXReadsPerHash
+	DefaultNodeSize      = cx.ColossusXNodeSize
+	DefaultEpochBlocks   = cx.ColossusXEpochBlocks
 )
 
 type BackendMode = cx.BackendMode
@@ -83,7 +83,7 @@ func ParseCLIConfig(args []string) (CLIConfig, error) {
 	fs := flag.NewFlagSet("colossusx", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 
-	modeName := fs.String("mode", string(cx.ModeStrict), "operating mode (strict only)")
+	modeName := fs.String("mode", string(cx.ModeColossusX), "operating mode (colossusx only)")
 	backendName := fs.String("backend", string(BackendOpenCL), "mining backend: cuda, opencl, metal, cpu, unified, or gpu")
 	dagAlloc := fs.String("dag-alloc", "auto", "dag allocation strategy: auto, go-heap, pinned-host, cuda-managed, opencl-svm, metal-shared")
 	initialDAGMiB := fs.Uint64("initial-dag-mib", DefaultInitialDAGMiB, "initial DAG size in MiB")
@@ -111,7 +111,7 @@ func ParseCLIConfig(args []string) (CLIConfig, error) {
 	if *dagMiB != 0 {
 		*initialDAGMiB = *dagMiB
 	}
-	spec := cx.StrictSpec()
+	spec := cx.ColossusXSpec()
 	if *dagGrowthMiB != DefaultDAGGrowthMiB {
 		spec.DAGGrowthBytesPerEpoch = (*dagGrowthMiB) * 1024 * 1024
 	}
@@ -122,7 +122,7 @@ func ParseCLIConfig(args []string) (CLIConfig, error) {
 	if err := spec.Validate(); err != nil {
 		return CLIConfig{}, err
 	}
-	if err := ValidateStrictProductionConfig(mode, backend, *dagAlloc); err != nil {
+	if err := ValidateColossusXProductionConfig(mode, backend, *dagAlloc); err != nil {
 		return CLIConfig{}, err
 	}
 
@@ -213,7 +213,7 @@ func PrintConfig(cfg CLIConfig, backend HashBackend, strategy MemoryStrategy) {
 
 func parseMode(s string) (cx.Mode, error) {
 	switch cx.Mode(s) {
-	case cx.ModeStrict:
+	case cx.ModeColossusX:
 		return cx.Mode(s), nil
 	default:
 		return "", fmt.Errorf("unsupported mode %q", s)

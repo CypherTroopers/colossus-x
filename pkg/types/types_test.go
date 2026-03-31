@@ -12,7 +12,7 @@ func TestHeaderEncodingDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := cx.StrictSpecWithGrowth(8*1024*1024, 64*1024)
+	spec := cx.ColossusXSpecWithGrowth(8*1024*1024, 64*1024)
 	h := BlockHeader{Version: 1, Height: 7, Timestamp: 42, Target: target, Nonce: 9, EpochSeed: EpochSeedForHeight(spec, 7), DAGSizeBytes: spec.DAGSizeForHeight(7)}
 	if got, want := string(h.Encode()), string(h.Encode()); got != want {
 		t.Fatalf("encoding not stable")
@@ -23,7 +23,7 @@ func TestHeaderEncodingDeterministic(t *testing.T) {
 }
 
 func TestDAGSizeForHeightGrowthBoundaries(t *testing.T) {
-	spec := cx.StrictSpecWithGrowth(8*1024*1024, 512*1024)
+	spec := cx.ColossusXSpecWithGrowth(8*1024*1024, 512*1024)
 	spec.EpochBlocks = 16
 	cases := []struct {
 		height uint64
@@ -42,7 +42,7 @@ func TestDAGSizeForHeightGrowthBoundaries(t *testing.T) {
 }
 
 func TestEpochSeedForHeightUsesResolvedDAGSize(t *testing.T) {
-	spec := cx.StrictSpecWithGrowth(8*1024*1024, 512*1024)
+	spec := cx.ColossusXSpecWithGrowth(8*1024*1024, 512*1024)
 	spec.EpochBlocks = 16
 	seedSameEpochA := EpochSeedForHeight(spec, 1)
 	seedSameEpochB := EpochSeedForHeight(spec, 15)
@@ -56,7 +56,7 @@ func TestEpochSeedForHeightUsesResolvedDAGSize(t *testing.T) {
 }
 
 func TestEpochSeedForHeightUsesEpochAndGenesisHash(t *testing.T) {
-	spec := cx.StrictSpec()
+	spec := cx.ColossusXSpec()
 	spec.EpochBlocks = 16
 	spec.GenesisHash = Hash(sha256.Sum256([]byte("genesis-anchor")))
 	if EpochSeedForHeight(spec, 3) != EpochSeedForHeight(spec, 15) {
@@ -73,6 +73,6 @@ func TestEpochSeedForHeightUsesEpochAndGenesisHash(t *testing.T) {
 }
 
 func TestDAGSizeForEpochOverflowDoesNotPanic(t *testing.T) {
-	spec := cx.StrictSpecWithGrowth(8*1024*1024, 512*1024)
+	spec := cx.ColossusXSpecWithGrowth(8*1024*1024, 512*1024)
 	_ = spec.DAGSizeForEpoch(^uint64(0))
 }

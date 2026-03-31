@@ -36,7 +36,7 @@ type Validator struct {
 	allocator              cx.Allocator
 	miningBackend          cx.HashBackend
 	miningAllocator        cx.Allocator
-	strictMerkleRoots      map[string][32]byte
+	colossusxMerkleRoots   map[string][32]byte
 }
 
 type dagKey struct {
@@ -69,7 +69,7 @@ func (CPUBackend) Description() string   { return "consensus cpu backend" }
 func (CPUBackend) Prepare(*cx.DAG) error { return nil }
 func (CPUBackend) Hash(header []byte, nonce cx.Nonce, dag *cx.DAG) cx.HashResult {
 	if dag.Spec().AlgorithmVersion >= 2 {
-		return cx.StrictV2Hash(dag.Spec(), header, nonce, dag)
+		return cx.ColossusXHash(dag.Spec(), header, nonce, dag)
 	}
 	return cx.LatticeHash(dag.Spec(), header, nonce, dag, nil)
 }
@@ -94,7 +94,7 @@ func NewValidator(cfg types.ChainConfig, backend cx.HashBackend, workers int) (*
 		allocator:              sliceAllocator{},
 		miningBackend:          backend,
 		miningAllocator:        sliceAllocator{},
-		strictMerkleRoots:      make(map[string][32]byte),
+		colossusxMerkleRoots:   make(map[string][32]byte),
 	}, nil
 }
 
@@ -111,8 +111,8 @@ func (v *Validator) SetMiningBackend(backend cx.HashBackend, allocator cx.Alloca
 		_ = dag.Close()
 		delete(v.sharedDAGs, key)
 	}
-	for key := range v.strictMerkleRoots {
-		delete(v.strictMerkleRoots, key)
+	for key := range v.colossusxMerkleRoots {
+		delete(v.colossusxMerkleRoots, key)
 	}
 }
 
@@ -164,9 +164,9 @@ func (v *Validator) ValidateHeader(store chain.Store, header types.BlockHeader) 
 	if header.Timestamp > now {
 		return fmt.Errorf("%w: timestamp %d too far ahead of %d", ErrInvalidTimestamp, header.Timestamp, now)
 	}
-	if header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeStrict {
+	if header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeColossusX {
 		if header.DAGMerkleRoot == (types.Hash{}) {
-			return fmt.Errorf("%w: strict header missing dag merkle root", ErrInvalidPoW)
+			return fmt.Errorf("%w: colossusx header missing dag merkle root", ErrInvalidPoW)
 		}
 		return nil
 	}
@@ -194,7 +194,7 @@ func (v *Validator) validateEpochParameters(header types.BlockHeader) error {
 		return fmt.Errorf("%w: dag size/seed mismatch", ErrInvalidEpoch)
 	}
 	offset := header.Height % epochBlocks
-	if offset >= cx.StrictEpochGraceBlocks {
+	if offset >= cx.ColossusXEpochGraceBlocks {
 		return fmt.Errorf("%w: dag size/seed mismatch outside grace window", ErrInvalidEpoch)
 	}
 	prevHeight := header.Height - epochBlocks
@@ -276,10 +276,10 @@ func (v *Validator) SealBlock(block types.Block, maxNonces uint64) (types.Block,
 	if err := backend.Prepare(dag); err != nil {
 		return types.Block{}, cx.MineResult{}, err
 	}
-	var strictLeaves [][32]byte
-	if block.Header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeStrict {
-		strictLeaves = dagMerkleLeaves(dag)
-		root := cx.BuildMerkleRoot(strictLeaves)
+	var colossusxLeaves [][32]byte
+	if block.Header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeColossusX {
+		colossusxLeaves = dagMerkleLeaves(dag)
+		root := cx.BuildMerkleRoot(colossusxLeaves)
 		block.Header.DAGMerkleRoot = types.Hash(root)
 		v.cacheMerkleRoot(v.sharedDAGCacheKey(block.Header), root)
 	}
@@ -296,14 +296,14 @@ func (v *Validator) SealBlock(block types.Block, maxNonces uint64) (types.Block,
 		return types.Block{}, cx.MineResult{}, errors.New("unexpected nonce type")
 	}
 	block.Header.Nonce = nonce.Uint64()
-	if block.Header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeStrict {
-		solution, _, err := cx.BuildStrictSolution(dag.Spec(), block.Header.EncodeForMining(), nonce.Uint64(), dag, strictLeaves)
+	if block.Header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeColossusX {
+		solution, _, err := cx.BuildColossusXSolution(dag.Spec(), block.Header.EncodeForMining(), nonce.Uint64(), dag, colossusxLeaves)
 		if err != nil {
 			return types.Block{}, cx.MineResult{}, err
 		}
-		compact := cx.CompactStrictSolution(solution)
-		block.StrictSolutionCompact = &compact
-		block.StrictSolution = nil
+		compact := cx.CompactColossusXSolution(solution)
+		block.ColossusXSolutionCompact = &compact
+		block.ColossusXSolution = nil
 	}
 	return block, res, nil
 }
@@ -322,7 +322,7 @@ func (v *Validator) Close() error {
 			seen[dag] = struct{}{}
 		}
 		delete(v.fallbackValidationDAGs, key)
-		delete(v.strictMerkleRoots, key)
+		delete(v.colossusxMerkleRoots, key)
 	}
 	for key, dag := range v.sharedDAGs {
 		if _, ok := seen[dag]; !ok {
@@ -330,7 +330,7 @@ func (v *Validator) Close() error {
 			seen[dag] = struct{}{}
 		}
 		delete(v.sharedDAGs, key)
-		delete(v.strictMerkleRoots, key)
+		delete(v.colossusxMerkleRoots, key)
 	}
 	return nil
 }
@@ -341,26 +341,26 @@ func (v *Validator) validatePoW(block types.Block) error {
 	if err != nil {
 		return err
 	}
-	if header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeStrict {
-		var solution cx.StrictSolution
+	if header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeColossusX {
+		var solution cx.ColossusXSolution
 		switch {
-		case block.StrictSolution != nil:
-			solution = *block.StrictSolution
-		case block.StrictSolutionCompact != nil:
-			expanded, err := cx.ExpandCompactStrictSolution(*block.StrictSolutionCompact)
+		case block.ColossusXSolution != nil:
+			solution = *block.ColossusXSolution
+		case block.ColossusXSolutionCompact != nil:
+			expanded, err := cx.ExpandCompactColossusXSolution(*block.ColossusXSolutionCompact)
 			if err != nil {
-				return fmt.Errorf("%w: invalid compact strict solution: %v", ErrInvalidPoW, err)
+				return fmt.Errorf("%w: invalid compact colossusx solution: %v", ErrInvalidPoW, err)
 			}
 			solution = expanded
 		default:
-			return fmt.Errorf("%w: strict solution is required", ErrInvalidPoW)
+			return fmt.Errorf("%w: colossusx solution is required", ErrInvalidPoW)
 		}
 		root := v.merkleRootForDAG(header, dag)
 		if root != [32]byte(header.DAGMerkleRoot) {
 			return fmt.Errorf("%w: dag merkle root mismatch", ErrInvalidPoW)
 		}
-		if err := cx.VerifyStrictSolution(dag.Spec(), header.EncodeForMining(), header.Target, root, solution); err != nil {
-			return fmt.Errorf("%w: strict solution verify failed: %v", ErrInvalidPoW, err)
+		if err := cx.VerifyColossusXSolution(dag.Spec(), header.EncodeForMining(), header.Target, root, solution); err != nil {
+			return fmt.Errorf("%w: colossusx solution verify failed: %v", ErrInvalidPoW, err)
 		}
 		return nil
 	}
@@ -385,7 +385,7 @@ func dagMerkleLeaves(dag *cx.DAG) [][32]byte {
 func (v *Validator) merkleRootForDAG(header types.BlockHeader, dag *cx.DAG) [32]byte {
 	key := v.sharedDAGCacheKey(header)
 	v.mu.Lock()
-	if root, ok := v.strictMerkleRoots[key]; ok {
+	if root, ok := v.colossusxMerkleRoots[key]; ok {
 		v.mu.Unlock()
 		return root
 	}
@@ -398,7 +398,7 @@ func (v *Validator) merkleRootForDAG(header types.BlockHeader, dag *cx.DAG) [32]
 func (v *Validator) cacheMerkleRoot(key string, root [32]byte) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	v.strictMerkleRoots[key] = root
+	v.colossusxMerkleRoots[key] = root
 }
 
 func (v *Validator) validationDAGForHeader(header types.BlockHeader) (*cx.DAG, error) {
@@ -500,8 +500,8 @@ func (v *Validator) cachedDAGForHeader(header types.BlockHeader, allocator cx.Al
 		return nil, err
 	}
 	cache[key] = dag
-	if spec.AlgorithmVersion >= 2 || spec.Mode == cx.ModeStrict {
-		v.strictMerkleRoots[key] = cx.BuildMerkleRoot(dagMerkleLeaves(dag))
+	if spec.AlgorithmVersion >= 2 || spec.Mode == cx.ModeColossusX {
+		v.colossusxMerkleRoots[key] = cx.BuildMerkleRoot(dagMerkleLeaves(dag))
 	}
 	return dag, nil
 }

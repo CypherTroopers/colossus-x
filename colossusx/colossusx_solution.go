@@ -14,7 +14,7 @@ type SolutionCell struct {
 	Proof MerkleProof
 }
 
-type StrictSolution struct {
+type ColossusXSolution struct {
 	Nonce       uint64
 	MixDigest   [64]byte
 	MiningCells []SolutionCell
@@ -27,7 +27,7 @@ type CompactSolutionCell struct {
 	ProofRefs []uint32
 }
 
-type StrictSolutionCompact struct {
+type ColossusXSolutionCompact struct {
 	Nonce       uint64
 	MixDigest   [64]byte
 	Siblings    [][32]byte
@@ -35,22 +35,22 @@ type StrictSolutionCompact struct {
 	AuditCells  []CompactSolutionCell
 }
 
-func BuildStrictSolution(spec Spec, header []byte, nonce uint64, dag DAGAccessor, leaves [][32]byte) (StrictSolution, [32]byte, error) {
+func BuildColossusXSolution(spec Spec, header []byte, nonce uint64, dag DAGAccessor, leaves [][32]byte) (ColossusXSolution, [32]byte, error) {
 	if dag == nil || dag.NodeCount() == 0 {
-		return StrictSolution{}, [32]byte{}, errors.New("dag is empty")
+		return ColossusXSolution{}, [32]byte{}, errors.New("dag is empty")
 	}
 	if len(leaves) == 0 {
-		return StrictSolution{}, [32]byte{}, errors.New("merkle leaves are empty")
+		return ColossusXSolution{}, [32]byte{}, errors.New("merkle leaves are empty")
 	}
 	if uint64(len(leaves)) != dag.NodeCount() {
-		return StrictSolution{}, [32]byte{}, errors.New("merkle leaves must match dag node count")
+		return ColossusXSolution{}, [32]byte{}, errors.New("merkle leaves must match dag node count")
 	}
-	trace := StrictV2TraceHash(spec, header, NewUint64Nonce(nonce), dag)
-	out := StrictSolution{
+	trace := ColossusXTraceHash(spec, header, NewUint64Nonce(nonce), dag)
+	out := ColossusXSolution{
 		Nonce:       nonce,
 		MixDigest:   trace.MixDigest,
 		MiningCells: make([]SolutionCell, 0, len(trace.Accessed)),
-		AuditCells:  make([]SolutionCell, 0, StrictAuditCellCount),
+		AuditCells:  make([]SolutionCell, 0, ColossusXAuditCellCount),
 	}
 	for _, idx := range trace.Accessed {
 		cell := make([]byte, spec.NodeSize)
@@ -61,7 +61,7 @@ func BuildStrictSolution(spec Spec, header []byte, nonce uint64, dag DAGAccessor
 			Proof: BuildMerkleProof(leaves, int(idx)),
 		})
 	}
-	auditIdx := StrictV2AuditIndicesFromSolutionHash(trace.SolutionHash, dag.NodeCount(), StrictAuditCellCount)
+	auditIdx := ColossusXAuditIndicesFromSolutionHash(trace.SolutionHash, dag.NodeCount(), ColossusXAuditCellCount)
 	for _, idx := range auditIdx {
 		cell := make([]byte, spec.NodeSize)
 		dag.ReadNode(idx, cell)
@@ -74,7 +74,7 @@ func BuildStrictSolution(spec Spec, header []byte, nonce uint64, dag DAGAccessor
 	return out, trace.Result, nil
 }
 
-func VerifyStrictSolution(spec Spec, header []byte, target Target, merkleRoot [32]byte, solution StrictSolution) error {
+func VerifyColossusXSolution(spec Spec, header []byte, target Target, merkleRoot [32]byte, solution ColossusXSolution) error {
 	initialInput := append([]byte{}, header...)
 	var nonceLE [8]byte
 	binary.LittleEndian.PutUint64(nonceLE[:], solution.Nonce)
@@ -96,7 +96,7 @@ func VerifyStrictSolution(spec Spec, header []byte, target Target, merkleRoot [3
 		if !VerifyMerkleProof(merkleRoot, leaf, int(c.Index), c.Proof) {
 			return errors.New("invalid mining merkle proof")
 		}
-		mix = strictV2RoundMix(mix, c.Data)
+		mix = colossusXRoundMix(mix, c.Data)
 	}
 	if mix != solution.MixDigest {
 		return errors.New("mix digest mismatch")
@@ -108,7 +108,7 @@ func VerifyStrictSolution(spec Spec, header []byte, target Target, merkleRoot [3
 	}
 	solutionSeed := append(append(initial[:], mix[:]...), nonceLE[:]...)
 	solutionHash := blake3.Sum256(solutionSeed)
-	expectAudit := StrictV2AuditIndicesFromSolutionHash(solutionHash, spec.NodeCount(), StrictAuditCellCount)
+	expectAudit := ColossusXAuditIndicesFromSolutionHash(solutionHash, spec.NodeCount(), ColossusXAuditCellCount)
 	if len(solution.AuditCells) != len(expectAudit) {
 		return errors.New("invalid audit cell count")
 	}
@@ -124,7 +124,7 @@ func VerifyStrictSolution(spec Spec, header []byte, target Target, merkleRoot [3
 	return nil
 }
 
-func CompactStrictSolution(solution StrictSolution) StrictSolutionCompact {
+func CompactColossusXSolution(solution ColossusXSolution) ColossusXSolutionCompact {
 	pool := make([][32]byte, 0, 256)
 	indexBySibling := map[[32]byte]uint32{}
 	encodeCell := func(c SolutionCell) CompactSolutionCell {
@@ -140,7 +140,7 @@ func CompactStrictSolution(solution StrictSolution) StrictSolutionCompact {
 		}
 		return CompactSolutionCell{Index: c.Index, Data: c.Data, ProofRefs: refs}
 	}
-	out := StrictSolutionCompact{
+	out := ColossusXSolutionCompact{
 		Nonce:       solution.Nonce,
 		MixDigest:   solution.MixDigest,
 		MiningCells: make([]CompactSolutionCell, 0, len(solution.MiningCells)),
@@ -156,7 +156,7 @@ func CompactStrictSolution(solution StrictSolution) StrictSolutionCompact {
 	return out
 }
 
-func ExpandCompactStrictSolution(compact StrictSolutionCompact) (StrictSolution, error) {
+func ExpandCompactColossusXSolution(compact ColossusXSolutionCompact) (ColossusXSolution, error) {
 	decodeCell := func(c CompactSolutionCell) (SolutionCell, error) {
 		proof := make(MerkleProof, 0, len(c.ProofRefs))
 		for _, ref := range c.ProofRefs {
@@ -167,7 +167,7 @@ func ExpandCompactStrictSolution(compact StrictSolutionCompact) (StrictSolution,
 		}
 		return SolutionCell{Index: c.Index, Data: c.Data, Proof: proof}, nil
 	}
-	out := StrictSolution{
+	out := ColossusXSolution{
 		Nonce:       compact.Nonce,
 		MixDigest:   compact.MixDigest,
 		MiningCells: make([]SolutionCell, 0, len(compact.MiningCells)),
@@ -176,14 +176,14 @@ func ExpandCompactStrictSolution(compact StrictSolutionCompact) (StrictSolution,
 	for _, c := range compact.MiningCells {
 		d, err := decodeCell(c)
 		if err != nil {
-			return StrictSolution{}, err
+			return ColossusXSolution{}, err
 		}
 		out.MiningCells = append(out.MiningCells, d)
 	}
 	for _, c := range compact.AuditCells {
 		d, err := decodeCell(c)
 		if err != nil {
-			return StrictSolution{}, err
+			return ColossusXSolution{}, err
 		}
 		out.AuditCells = append(out.AuditCells, d)
 	}

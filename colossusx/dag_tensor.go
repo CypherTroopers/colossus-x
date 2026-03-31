@@ -16,8 +16,8 @@ func generateTensorDAG(spec Spec, dag []byte, epochSeed []byte, workers int, don
 	if err := spec.Validate(); err != nil {
 		return err
 	}
-	if spec.Mode != ModeStrict {
-		return errors.New("tensor dag generation is strict-only")
+	if spec.Mode != ModeColossusX {
+		return errors.New("tensor dag generation is colossusx-only")
 	}
 	for off, tile := uint64(0), uint64(0); off+spec.NodeSize <= uint64(len(dag)) && off < spec.DAGSizeBytes; off, tile = off+spec.NodeSize, tile+1 {
 		var ctr [8]byte

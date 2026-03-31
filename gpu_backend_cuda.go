@@ -80,8 +80,8 @@ func (b *CUDAHashBackend) Prepare(dag *DAG) error {
 	if dag.AllocationName() != "cuda-managed" {
 		return fmt.Errorf("cuda backend requires cuda-managed DAG allocation")
 	}
-	if dag.Spec().Mode == cx.ModeStrict {
-		return fmt.Errorf("strict mode requires cuda device-kernel execution; host-reference fallback is forbidden")
+	if dag.Spec().Mode == cx.ModeColossusX {
+		return fmt.Errorf("colossusx mode requires cuda device-kernel execution; host-reference fallback is forbidden")
 	}
 	if _, err := newRawContiguousDAGBuffer(dag); err != nil {
 		return err

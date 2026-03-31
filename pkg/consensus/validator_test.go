@@ -12,7 +12,7 @@ import (
 
 func testConfig(t *testing.T) (types.ChainConfig, types.GenesisConfig) {
 	t.Helper()
-	spec := cx.StrictSpecWithGrowth(1024*1024, 256*1024)
+	spec := cx.ColossusXSpecWithGrowth(1024*1024, 256*1024)
 	target, err := cx.ParseTargetHex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 	if err != nil {
 		t.Fatal(err)
@@ -267,9 +267,9 @@ func TestSealBlockAndValidateBlockShareCommonCaseDAG(t *testing.T) {
 	}
 }
 
-func strictTestConfig(t *testing.T) (types.ChainConfig, types.GenesisConfig) {
+func colossusxTestConfig(t *testing.T) (types.ChainConfig, types.GenesisConfig) {
 	t.Helper()
-	spec := cx.StrictSpec()
+	spec := cx.ColossusXSpec()
 	spec.InitialDAGSizeBytes = 256 * 16
 	spec.DAGSizeBytes = spec.InitialDAGSizeBytes
 	spec.DAGGrowthBytesPerEpoch = 256
@@ -277,13 +277,13 @@ func strictTestConfig(t *testing.T) (types.ChainConfig, types.GenesisConfig) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chainCfg := types.ChainConfig{NetworkID: "strict-test", Spec: spec}
-	genesis := types.GenesisConfig{ChainID: "strict-test", Message: "strict", Timestamp: time.Now().Unix() - 1, Bits: target, Spec: spec}
+	chainCfg := types.ChainConfig{NetworkID: "colossusx-test", Spec: spec}
+	genesis := types.GenesisConfig{ChainID: "colossusx-test", Message: "colossusx", Timestamp: time.Now().Unix() - 1, Bits: target, Spec: spec}
 	return chainCfg, genesis
 }
 
-func TestStrictSealBlockUsesCompactSolutionAndValidates(t *testing.T) {
-	chainCfg, genesisCfg := strictTestConfig(t)
+func TestColossusXSealBlockUsesCompactSolutionAndValidates(t *testing.T) {
+	chainCfg, genesisCfg := colossusxTestConfig(t)
 	v, err := NewValidator(chainCfg, CPUBackend{}, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -295,19 +295,19 @@ func TestStrictSealBlockUsesCompactSolutionAndValidates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if genesis.StrictSolutionCompact == nil {
-		t.Fatal("expected compact strict solution to be attached")
+	if genesis.ColossusXSolutionCompact == nil {
+		t.Fatal("expected compact colossusx solution to be attached")
 	}
-	if genesis.StrictSolution != nil {
-		t.Fatal("expected full strict solution to be omitted when compact is present")
+	if genesis.ColossusXSolution != nil {
+		t.Fatal("expected full colossusx solution to be omitted when compact is present")
 	}
 	if err := v.ValidateBlock(store, genesis); err != nil {
-		t.Fatalf("validate strict genesis: %v", err)
+		t.Fatalf("validate colossusx genesis: %v", err)
 	}
 }
 
-func TestStrictEpochGraceWindowAcceptsPreviousEpochSeedAndSize(t *testing.T) {
-	chainCfg, _ := strictTestConfig(t)
+func TestColossusXEpochGraceWindowAcceptsPreviousEpochSeedAndSize(t *testing.T) {
+	chainCfg, _ := colossusxTestConfig(t)
 	v, err := NewValidator(chainCfg, CPUBackend{}, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -324,7 +324,7 @@ func TestStrictEpochGraceWindowAcceptsPreviousEpochSeedAndSize(t *testing.T) {
 	if err := v.validateEpochParameters(h); err != nil {
 		t.Fatalf("expected previous-epoch params to be accepted in grace window: %v", err)
 	}
-	h.Height = chainCfg.Spec.EpochBlocks + cx.StrictEpochGraceBlocks + 1
+	h.Height = chainCfg.Spec.EpochBlocks + cx.ColossusXEpochGraceBlocks + 1
 	if err := v.validateEpochParameters(h); err == nil {
 		t.Fatal("expected previous-epoch params to be rejected outside grace window")
 	}

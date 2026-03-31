@@ -50,7 +50,7 @@ func EnsureSeedInput(s *HashScratch, headerLen int, nonce Nonce) {
 
 func LatticeHash(spec Spec, header []byte, nonce Nonce, accessor DAGAccessor, scratch *HashScratch) HashResult {
 	if spec.AlgorithmVersion >= 2 {
-		return StrictV2Hash(spec, header, nonce, accessor)
+		return ColossusXHash(spec, header, nonce, accessor)
 	}
 
 	var out HashResult

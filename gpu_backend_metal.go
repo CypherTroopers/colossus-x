@@ -11,7 +11,7 @@ type MetalBackend struct{}
 func NewMetalBackend() (HashBackend, error) { return &MetalBackend{}, nil }
 func (b *MetalBackend) Mode() BackendMode   { return BackendMetal }
 func (b *MetalBackend) Description() string {
-	return "metal backend requiring shared-memory device execution for strict-v2"
+	return "metal backend requiring shared-memory device execution for colossusx-v2"
 }
 func (b *MetalBackend) InitializeRuntime() error             { return nil }
 func (b *MetalBackend) CUDADeviceOrdinal() (int, bool)       { return 0, false }
@@ -20,13 +20,13 @@ func (b *MetalBackend) MetalContext() (MetalContext, bool) {
 	return MetalContext{Device: struct{}{}}, true
 }
 func (b *MetalBackend) Prepare(dag *DAG) error {
-	if dag.Spec().Mode == cx.ModeStrict && dag.AllocationName() != "metal-shared" {
-		return fmt.Errorf("strict metal backend requires metal-shared DAG allocation")
+	if dag.Spec().Mode == cx.ModeColossusX && dag.AllocationName() != "metal-shared" {
+		return fmt.Errorf("colossusx metal backend requires metal-shared DAG allocation")
 	}
 	return nil
 }
 func (b *MetalBackend) Hash(header []byte, nonce cx.Nonce, dag *DAG) HashResult {
-	return cx.StrictV2Hash(dag.Spec(), header, nonce, dag)
+	return cx.ColossusXHash(dag.Spec(), header, nonce, dag)
 }
 func (b *MetalBackend) HashBatch(header []byte, startNonce cx.Nonce, count uint64, dag *DAG) ([]HashResult, error) {
 	out := make([]HashResult, 0, count)

@@ -7,18 +7,18 @@ import (
 )
 
 const (
-	StrictInitialDAGSizeBytes     uint64 = 80 * 1024 * 1024 * 1024
-	DefaultDAGGrowthBytesPerEpoch uint64 = 256 * 1024 * 1024
-	StrictNodeSize                uint64 = 256
-	StrictReadsPerHash            uint64 = 128
-	StrictEpochBlocks             uint64 = 7200
-	StrictEpochPrecomputeWindow   uint64 = 1000
-	StrictEpochGraceBlocks        uint64 = 64
+	ColossusXInitialDAGSizeBytes   uint64 = 80 * 1024 * 1024 * 1024
+	DefaultDAGGrowthBytesPerEpoch  uint64 = 256 * 1024 * 1024
+	ColossusXNodeSize              uint64 = 256
+	ColossusXReadsPerHash          uint64 = 128
+	ColossusXEpochBlocks           uint64 = 7200
+	ColossusXEpochPrecomputeWindow uint64 = 1000
+	ColossusXEpochGraceBlocks      uint64 = 64
 
-	StrictV2TileSizeBytes     uint64 = 4096
-	StrictV2MatDim            uint32 = 16
-	StrictV2ComputeRounds     uint32 = 64
-	StrictV2RoundCommitPeriod uint32 = 8
+	ColossusXTileSizeBytes     uint64 = 4096
+	ColossusXMatDim            uint32 = 16
+	ColossusXComputeRounds     uint32 = 64
+	ColossusXRoundCommitPeriod uint32 = 8
 )
 
 type Mode string
@@ -28,7 +28,7 @@ type ComputePrecision string
 type MemoryModel string
 
 const (
-	ModeStrict Mode = "strict"
+	ModeColossusX Mode = "colossusx"
 
 	ComputePrecisionInt8 ComputePrecision = "int8"
 	ComputePrecisionFP16 ComputePrecision = "fp16"
@@ -56,28 +56,28 @@ type Spec struct {
 	GenesisHash            [32]byte
 }
 
-func StrictSpec() Spec {
+func ColossusXSpec() Spec {
 	return Spec{
-		Mode:                   ModeStrict,
-		DAGSizeBytes:           StrictInitialDAGSizeBytes,
-		InitialDAGSizeBytes:    StrictInitialDAGSizeBytes,
+		Mode:                   ModeColossusX,
+		DAGSizeBytes:           ColossusXInitialDAGSizeBytes,
+		InitialDAGSizeBytes:    ColossusXInitialDAGSizeBytes,
 		DAGGrowthBytesPerEpoch: DefaultDAGGrowthBytesPerEpoch,
-		NodeSize:               StrictNodeSize,
-		ReadsPerHash:           StrictReadsPerHash,
-		EpochBlocks:            StrictEpochBlocks,
-		TileSizeBytes:          StrictV2TileSizeBytes,
-		MatDim:                 StrictV2MatDim,
-		ComputeRounds:          StrictV2ComputeRounds,
+		NodeSize:               ColossusXNodeSize,
+		ReadsPerHash:           ColossusXReadsPerHash,
+		EpochBlocks:            ColossusXEpochBlocks,
+		TileSizeBytes:          ColossusXTileSizeBytes,
+		MatDim:                 ColossusXMatDim,
+		ComputeRounds:          ColossusXComputeRounds,
 		ComputePrecision:       ComputePrecisionInt8,
 		MemoryModelRequired:    MemoryModelUnifiedShared,
 		DeviceExecutionOnly:    true,
-		RoundCommitInterval:    StrictV2RoundCommitPeriod,
+		RoundCommitInterval:    ColossusXRoundCommitPeriod,
 		AlgorithmVersion:       2,
 	}
 }
 
-func StrictSpecWithGrowth(initialDAGSizeBytes, growthBytesPerEpoch uint64) Spec {
-	s := StrictSpec()
+func ColossusXSpecWithGrowth(initialDAGSizeBytes, growthBytesPerEpoch uint64) Spec {
+	s := ColossusXSpec()
 	if initialDAGSizeBytes != 0 {
 		s.InitialDAGSizeBytes = initialDAGSizeBytes
 		s.DAGSizeBytes = initialDAGSizeBytes
@@ -90,7 +90,7 @@ func StrictSpecWithGrowth(initialDAGSizeBytes, growthBytesPerEpoch uint64) Spec 
 
 func (s Spec) Validate() error {
 	if s.Mode == "" {
-		s.Mode = ModeStrict
+		s.Mode = ModeColossusX
 	}
 	initial := s.initialDAGSize()
 	growth := s.growthDAGSizePerEpoch()
@@ -100,8 +100,8 @@ func (s Spec) Validate() error {
 	if growth == 0 {
 		return errors.New("dag growth per epoch must be > 0")
 	}
-	if s.NodeSize != StrictNodeSize {
-		return fmt.Errorf("COLOSSUS-X requires %d-byte nodes", StrictNodeSize)
+	if s.NodeSize != ColossusXNodeSize {
+		return fmt.Errorf("COLOSSUS-X requires %d-byte nodes", ColossusXNodeSize)
 	}
 	if s.ReadsPerHash == 0 {
 		return errors.New("reads/hash must be > 0")
@@ -116,8 +116,8 @@ func (s Spec) Validate() error {
 		return fmt.Errorf("dag growth per epoch must be multiple of node size (%d)", s.NodeSize)
 	}
 	switch s.Mode {
-	case ModeStrict:
-		// strict is the only supported mode.
+	case ModeColossusX:
+		// colossusx is the only supported mode.
 	default:
 		return fmt.Errorf("unsupported mode %q", s.Mode)
 	}

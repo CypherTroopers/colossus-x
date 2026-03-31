@@ -7,9 +7,9 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-const StrictAuditCellCount = 32
+const ColossusXAuditCellCount = 32
 
-type StrictV2Trace struct {
+type ColossusXTrace struct {
 	InitialHash  [64]byte
 	MixDigest    [64]byte
 	Accessed     []uint32
@@ -17,16 +17,16 @@ type StrictV2Trace struct {
 	SolutionHash [32]byte
 }
 
-func StrictV2Hash(spec Spec, header []byte, nonce Nonce, dag DAGAccessor) HashResult {
-	trace := StrictV2TraceHash(spec, header, nonce, dag)
+func ColossusXHash(spec Spec, header []byte, nonce Nonce, dag DAGAccessor) HashResult {
+	trace := ColossusXTraceHash(spec, header, nonce, dag)
 	var out HashResult
 	copy(out.Pow256[:], trace.Result[:])
 	copy(out.Full512[:], append(trace.InitialHash[:32], trace.MixDigest[:32]...))
 	return out
 }
 
-func StrictV2TraceHash(spec Spec, header []byte, nonce Nonce, dag DAGAccessor) StrictV2Trace {
-	var trace StrictV2Trace
+func ColossusXTraceHash(spec Spec, header []byte, nonce Nonce, dag DAGAccessor) ColossusXTrace {
+	var trace ColossusXTrace
 	if dag == nil || dag.NodeCount() == 0 {
 		return trace
 	}
@@ -43,7 +43,7 @@ func StrictV2TraceHash(spec Spec, header []byte, nonce Nonce, dag DAGAccessor) S
 		index := uint64(fnv1a32(uint32(round), binary.LittleEndian.Uint32(mix[:4]))) % dag.NodeCount()
 		accessed = append(accessed, uint32(index))
 		dag.ReadNode(index, cell)
-		mix = strictV2RoundMix(mix, cell)
+		mix = colossusXRoundMix(mix, cell)
 	}
 
 	finalInput := make([]byte, 0, len(initial)+len(mix))
@@ -63,7 +63,7 @@ func StrictV2TraceHash(spec Spec, header []byte, nonce Nonce, dag DAGAccessor) S
 	return trace
 }
 
-func StrictV2AuditIndices(pow [32]byte, dagCellCount uint64, count uint32) []uint64 {
+func ColossusXAuditIndices(pow [32]byte, dagCellCount uint64, count uint32) []uint64 {
 	if dagCellCount == 0 || count == 0 {
 		return nil
 	}
@@ -78,11 +78,11 @@ func StrictV2AuditIndices(pow [32]byte, dagCellCount uint64, count uint32) []uin
 	return out
 }
 
-func StrictV2AuditIndicesFromSolutionHash(solutionHash [32]byte, dagCellCount uint64, count uint32) []uint64 {
-	return StrictV2AuditIndices(solutionHash, dagCellCount, count)
+func ColossusXAuditIndicesFromSolutionHash(solutionHash [32]byte, dagCellCount uint64, count uint32) []uint64 {
+	return ColossusXAuditIndices(solutionHash, dagCellCount, count)
 }
 
-func strictV2RoundMix(mix [64]byte, cell []byte) [64]byte {
+func colossusXRoundMix(mix [64]byte, cell []byte) [64]byte {
 	words := [16]uint32{}
 	for i := range words {
 		words[i] = binary.LittleEndian.Uint32(mix[i*4:])
