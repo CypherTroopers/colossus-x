@@ -28,8 +28,7 @@ type ComputePrecision string
 type MemoryModel string
 
 const (
-	ModeStrict   Mode = "strict"
-	ModeResearch Mode = "research"
+	ModeStrict Mode = "strict"
 
 	ComputePrecisionInt8 ComputePrecision = "int8"
 	ComputePrecisionFP16 ComputePrecision = "fp16"
@@ -76,33 +75,14 @@ func StrictSpec() Spec {
 	}
 }
 
-func ResearchSpec(initialDAGSizeBytes, readsPerHash, epochBlocks uint64) Spec {
-	return ResearchSpecWithGrowth(initialDAGSizeBytes, DefaultDAGGrowthBytesPerEpoch, readsPerHash, epochBlocks)
-}
-
-func ResearchSpecWithGrowth(initialDAGSizeBytes, growthBytesPerEpoch, readsPerHash, epochBlocks uint64) Spec {
+func StrictSpecWithGrowth(initialDAGSizeBytes, growthBytesPerEpoch uint64) Spec {
 	s := StrictSpec()
-	s.Mode = ModeResearch
-	s.TileSizeBytes = 0
-	s.MatDim = 0
-	s.ComputeRounds = 0
-	s.ComputePrecision = ""
-	s.MemoryModelRequired = MemoryModelAny
-	s.DeviceExecutionOnly = false
-	s.RoundCommitInterval = 0
-	s.AlgorithmVersion = 1
 	if initialDAGSizeBytes != 0 {
 		s.InitialDAGSizeBytes = initialDAGSizeBytes
 		s.DAGSizeBytes = initialDAGSizeBytes
 	}
 	if growthBytesPerEpoch != 0 {
 		s.DAGGrowthBytesPerEpoch = growthBytesPerEpoch
-	}
-	if readsPerHash != 0 {
-		s.ReadsPerHash = readsPerHash
-	}
-	if epochBlocks != 0 {
-		s.EpochBlocks = epochBlocks
 	}
 	return s
 }
@@ -136,25 +116,7 @@ func (s Spec) Validate() error {
 	}
 	switch s.Mode {
 	case ModeStrict:
-		if s.NodeSize != StrictNodeSize || s.ReadsPerHash != StrictReadsPerHash || s.EpochBlocks != StrictEpochBlocks {
-			return fmt.Errorf("strict COLOSSUS-X mode requires NODE_SIZE=%d READS_PER_H=%d EPOCH_BLOCKS=%d", StrictNodeSize, StrictReadsPerHash, StrictEpochBlocks)
-		}
-		if s.AlgorithmVersion != 2 {
-			return fmt.Errorf("strict mode requires algorithm version 2")
-		}
-		if s.MemoryModelRequired != MemoryModelUnifiedShared {
-			return fmt.Errorf("strict mode requires unified-shared memory model")
-		}
-		if !s.DeviceExecutionOnly {
-			return fmt.Errorf("strict mode requires device execution")
-		}
-		if s.TileSizeBytes == 0 || s.MatDim == 0 || s.ComputeRounds == 0 || s.RoundCommitInterval == 0 {
-			return fmt.Errorf("strict mode requires strict-v2 tensor parameters")
-		}
-	case ModeResearch:
-		if s.AlgorithmVersion == 0 {
-			s.AlgorithmVersion = 1
-		}
+		// strict is the only supported mode.
 	default:
 		return fmt.Errorf("unsupported mode %q", s.Mode)
 	}

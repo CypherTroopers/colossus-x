@@ -12,7 +12,7 @@ import (
 
 func testConfig(t *testing.T) (types.ChainConfig, types.GenesisConfig) {
 	t.Helper()
-	spec := cx.ResearchSpecWithGrowth(1024*1024, 256*1024, 8, 8)
+	spec := cx.StrictSpecWithGrowth(1024*1024, 256*1024)
 	target, err := cx.ParseTargetHex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 	if err != nil {
 		t.Fatal(err)

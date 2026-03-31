@@ -17,7 +17,7 @@ func (a *testAllocation) Free() error   { a.freed = true; return nil }
 func (a *testAllocation) Name() string  { return "test-allocation" }
 
 func TestNewDAGWithStrategyGoHeap(t *testing.T) {
-	spec := Spec{Mode: cx.ModeResearch, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
+	spec := Spec{Mode: cx.ModeStrict, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
 	dag, err := NewDAGWithStrategy(spec, GoHeapMemory{})
 	if err != nil {
 		t.Fatalf("NewDAGWithStrategy: %v", err)
@@ -29,7 +29,7 @@ func TestNewDAGWithStrategyGoHeap(t *testing.T) {
 }
 
 func TestUnsupportedStrategyReturnsExplicitError(t *testing.T) {
-	alloc, err := NewDAGWithStrategy(Spec{Mode: cx.ModeResearch, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}, PinnedMemory{})
+	alloc, err := NewDAGWithStrategy(Spec{Mode: cx.ModeStrict, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}, PinnedMemory{})
 	if err != nil {
 		t.Fatalf("expected pinned strategy to allocate, got: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestUnsupportedStrategyReturnsExplicitError(t *testing.T) {
 
 func TestDAGCloseReleasesOwnedAllocation(t *testing.T) {
 	alloc := &testAllocation{buf: make([]byte, 1024)}
-	dag, err := NewDAGWithAllocation(Spec{Mode: cx.ModeResearch, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}, alloc, true)
+	dag, err := NewDAGWithAllocation(Spec{Mode: cx.ModeStrict, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}, alloc, true)
 	if err != nil {
 		t.Fatalf("NewDAGWithAllocation: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestAllocatorResolutionDependsOnRuntimeInitialization(t *testing.T) {
 
 func TestNewDAGWithAllocationRejectsShortBuffer(t *testing.T) {
 	alloc := &testAllocation{buf: make([]byte, 8)}
-	_, err := NewDAGWithAllocation(Spec{Mode: cx.ModeResearch, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}, alloc, false)
+	_, err := NewDAGWithAllocation(Spec{Mode: cx.ModeStrict, DAGSizeBytes: 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}, alloc, false)
 	if err == nil {
 		t.Fatal("expected short allocation to fail")
 	}
@@ -132,20 +132,20 @@ func TestValidationReuseCapabilityForManagedAllocators(t *testing.T) {
 	}
 }
 
-func TestResolveDAGStrategyForModeStrictRejectsHostAllocators(t *testing.T) {
-	if _, err := ResolveDAGStrategyForMode(cx.ModeStrict, BackendOpenCL, nil, "go-heap"); err == nil {
-		t.Fatal("expected strict mode to reject go-heap")
+func TestResolveDAGStrategyForModeStrictAllowsHostAllocators(t *testing.T) {
+	if _, err := ResolveDAGStrategyForMode(cx.ModeStrict, BackendOpenCL, nil, "go-heap"); err != nil {
+		t.Fatalf("expected strict mode to allow go-heap, got: %v", err)
 	}
-	if _, err := ResolveDAGStrategyForMode(cx.ModeStrict, BackendOpenCL, nil, "pinned-host"); err == nil {
-		t.Fatal("expected strict mode to reject pinned-host")
+	if _, err := ResolveDAGStrategyForMode(cx.ModeStrict, BackendOpenCL, nil, "pinned-host"); err != nil {
+		t.Fatalf("expected strict mode to allow pinned-host, got: %v", err)
 	}
 }
 
-func TestValidateStrictProductionConfigRejectsLegacyBackends(t *testing.T) {
-	if err := ValidateStrictProductionConfig(cx.ModeStrict, BackendCPU, "auto"); err == nil {
-		t.Fatal("expected strict mode to reject cpu backend")
+func TestValidateStrictProductionConfigAllowsAllConfiguredBackends(t *testing.T) {
+	if err := ValidateStrictProductionConfig(cx.ModeStrict, BackendCPU, "auto"); err != nil {
+		t.Fatalf("expected cpu backend to pass validation, got: %v", err)
 	}
-	if err := ValidateStrictProductionConfig(cx.ModeStrict, BackendUnified, "auto"); err == nil {
-		t.Fatal("expected strict mode to reject legacy unified backend")
+	if err := ValidateStrictProductionConfig(cx.ModeStrict, BackendUnified, "auto"); err != nil {
+		t.Fatalf("expected unified backend to pass validation, got: %v", err)
 	}
 }

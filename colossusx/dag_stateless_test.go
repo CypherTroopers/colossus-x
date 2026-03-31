@@ -7,7 +7,7 @@ import (
 )
 
 func TestHashHeaderStatelessMatchesMaterializedResearchDAG(t *testing.T) {
-	spec := ResearchSpec(64*16, 8, 32)
+	spec := StrictSpecWithGrowth(64*16, DefaultDAGGrowthBytesPerEpoch)
 	seed := []byte("0123456789abcdef0123456789abcdef")
 	header := []byte("external-verifier-header")
 	nonce := NewUint64Nonce(42)
@@ -29,7 +29,7 @@ func TestHashHeaderStatelessMatchesMaterializedResearchDAG(t *testing.T) {
 }
 
 func TestStatelessDAGReadNodeMatchesGenerateDAGResearchNode(t *testing.T) {
-	spec := ResearchSpec(64*4, 4, 16)
+	spec := StrictSpecWithGrowth(64*4, DefaultDAGGrowthBytesPerEpoch)
 	seed := []byte("fedcba9876543210fedcba9876543210")
 	buf := make([]byte, spec.DAGSizeBytes)
 	if err := GenerateDAG(spec, buf, seed, 1); err != nil {
@@ -50,7 +50,7 @@ func TestStatelessDAGReadNodeMatchesGenerateDAGResearchNode(t *testing.T) {
 }
 
 func TestVerifyHeaderStatelessChecksTarget(t *testing.T) {
-	spec := ResearchSpec(64*16, 8, 32)
+	spec := StrictSpecWithGrowth(64*16, DefaultDAGGrowthBytesPerEpoch)
 	seed := []byte("0123456789abcdef0123456789abcdef")
 	header := []byte("verify-target")
 	nonce := NewUint64Nonce(7)
@@ -78,7 +78,7 @@ func TestVerifyHeaderStatelessChecksTarget(t *testing.T) {
 }
 
 func TestHashHeaderStatelessSupportsDifferentResolvedSizesAcrossEpochs(t *testing.T) {
-	spec := ResearchSpecWithGrowth(64*16, 256, 8, 8)
+	spec := StrictSpecWithGrowth(64*16, 256)
 	seedEpoch0 := []byte("0123456789abcdef0123456789abcdef")
 	seedEpoch1 := []byte("fedcba9876543210fedcba9876543210")
 	header := []byte("external-verifier-header")

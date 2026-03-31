@@ -17,7 +17,7 @@ func (a sliceAccessor) ReadNode(i uint64, out []byte) {
 }
 
 func testSpec() Spec {
-	return ResearchSpec(64*16, 8, StrictEpochBlocks)
+	return StrictSpecWithGrowth(64*16, DefaultDAGGrowthBytesPerEpoch)
 }
 
 func TestGenerateDAGDeterministic(t *testing.T) {

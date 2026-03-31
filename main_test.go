@@ -30,18 +30,18 @@ func TestParseCLIConfigStrictModeAllowsDynamicDAGProfile(t *testing.T) {
 	}
 }
 
-func TestParseCLIConfigResearchModeAllowsOverrides(t *testing.T) {
-	cfg, err := ParseCLIConfig([]string{"-mode", "research", "-initial-dag-mib", "1", "-dag-growth-mib-per-epoch", "2", "-reads", "8", "-epoch-blocks", "16"})
+func TestParseCLIConfigStrictModeAllowsDagSizeOverrides(t *testing.T) {
+	cfg, err := ParseCLIConfig([]string{"-mode", "strict", "-initial-dag-mib", "1", "-dag-growth-mib-per-epoch", "2"})
 	if err != nil {
 		t.Fatalf("ParseCLIConfig: %v", err)
 	}
-	if cfg.Spec.Mode != cx.ModeResearch || cfg.Spec.InitialDAGSizeBytes != 1024*1024 || cfg.Spec.DAGGrowthBytesPerEpoch != 2*1024*1024 || cfg.Spec.ReadsPerHash != 8 || cfg.Spec.EpochBlocks != 16 {
-		t.Fatalf("unexpected research spec: %+v", cfg.Spec)
+	if cfg.Spec.Mode != cx.ModeStrict || cfg.Spec.InitialDAGSizeBytes != 1024*1024 || cfg.Spec.DAGGrowthBytesPerEpoch != 2*1024*1024 {
+		t.Fatalf("unexpected strict spec: %+v", cfg.Spec)
 	}
 }
 
 func TestCPUAndUnifiedBackendsProduceSameHash(t *testing.T) {
-	spec := Spec{Mode: cx.ModeResearch, DAGSizeBytes: 1024 * 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 8, EpochBlocks: DefaultEpochBlocks}
+	spec := Spec{Mode: cx.ModeStrict, DAGSizeBytes: 1024 * 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 8, EpochBlocks: DefaultEpochBlocks}
 	dag, err := NewDAG(spec)
 	if err != nil {
 		t.Fatalf("NewDAG: %v", err)
@@ -71,7 +71,7 @@ func TestCPUAndUnifiedBackendsProduceSameHash(t *testing.T) {
 }
 
 func TestUnifiedBackendUsesDAGAllocationDirectly(t *testing.T) {
-	spec := Spec{Mode: cx.ModeResearch, DAGSizeBytes: 64 * 8, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
+	spec := Spec{Mode: cx.ModeStrict, DAGSizeBytes: 64 * 8, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
 	dag, err := NewDAG(spec)
 	if err != nil {
 		t.Fatalf("NewDAG: %v", err)
@@ -94,7 +94,7 @@ func TestUnifiedBackendUsesDAGAllocationDirectly(t *testing.T) {
 }
 
 func TestCPUBackendCopiesPreparedDAG(t *testing.T) {
-	spec := Spec{Mode: cx.ModeResearch, DAGSizeBytes: 64 * 8, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
+	spec := Spec{Mode: cx.ModeStrict, DAGSizeBytes: 64 * 8, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
 	dag, err := NewDAG(spec)
 	if err != nil {
 		t.Fatalf("NewDAG: %v", err)
@@ -117,8 +117,8 @@ func TestCPUBackendCopiesPreparedDAG(t *testing.T) {
 }
 
 func TestRunInitializesBackendRuntimeBeforeResolvingAllocator(t *testing.T) {
-	spec := Spec{Mode: cx.ModeResearch, DAGSizeBytes: 64 * 64, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
-	cfg := CLIConfig{Mode: cx.ModeResearch, Backend: BackendGPU, DAGAlloc: "auto", Spec: spec, Workers: 1, Header: []byte("01"), EpochSeed: []byte("seedseedseedseedseedseedseedseed"), Target: cx.Target{}, MaxNonces: 1, BenchOnly: true}
+	spec := Spec{Mode: cx.ModeStrict, DAGSizeBytes: 64 * 64, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
+	cfg := CLIConfig{Mode: cx.ModeStrict, Backend: BackendGPU, DAGAlloc: "auto", Spec: spec, Workers: 1, Header: []byte("01"), EpochSeed: []byte("seedseedseedseedseedseedseedseed"), Target: cx.Target{}, MaxNonces: 1, BenchOnly: true}
 	backend := &fakeGPUBackend{}
 	if err := Run(cfg, backend); err != nil {
 		t.Fatalf("run: %v", err)
@@ -153,8 +153,8 @@ func TestStrictDAGRequiresFullLogicalImage(t *testing.T) {
 	}
 }
 
-func TestParseCLIConfigResearchModeDagMibAliasSetsInitialDag(t *testing.T) {
-	cfg, err := ParseCLIConfig([]string{"-mode", "research", "-dag-mib", "3"})
+func TestParseCLIConfigStrictModeDagMibAliasSetsInitialDag(t *testing.T) {
+	cfg, err := ParseCLIConfig([]string{"-mode", "strict", "-dag-mib", "3"})
 	if err != nil {
 		t.Fatalf("ParseCLIConfig: %v", err)
 	}
