@@ -1,6 +1,7 @@
 package types
 
 import (
+	"crypto/sha256"
 	"testing"
 
 	cx "colossusx/colossusx"
@@ -23,6 +24,7 @@ func TestHeaderEncodingDeterministic(t *testing.T) {
 
 func TestDAGSizeForHeightGrowthBoundaries(t *testing.T) {
 	spec := cx.StrictSpecWithGrowth(8*1024*1024, 512*1024)
+	spec.EpochBlocks = 16
 	cases := []struct {
 		height uint64
 		want   uint64
@@ -41,6 +43,7 @@ func TestDAGSizeForHeightGrowthBoundaries(t *testing.T) {
 
 func TestEpochSeedForHeightUsesResolvedDAGSize(t *testing.T) {
 	spec := cx.StrictSpecWithGrowth(8*1024*1024, 512*1024)
+	spec.EpochBlocks = 16
 	seedSameEpochA := EpochSeedForHeight(spec, 1)
 	seedSameEpochB := EpochSeedForHeight(spec, 15)
 	if seedSameEpochA != seedSameEpochB {
@@ -49,6 +52,23 @@ func TestEpochSeedForHeightUsesResolvedDAGSize(t *testing.T) {
 	seedNextEpoch := EpochSeedForHeight(spec, 16)
 	if seedSameEpochA == seedNextEpoch {
 		t.Fatal("expected epoch seed to change at epoch boundary")
+	}
+}
+
+func TestEpochSeedForHeightUsesEpochAndGenesisHash(t *testing.T) {
+	spec := cx.StrictSpec()
+	spec.EpochBlocks = 16
+	spec.GenesisHash = Hash(sha256.Sum256([]byte("genesis-anchor")))
+	if EpochSeedForHeight(spec, 3) != EpochSeedForHeight(spec, 15) {
+		t.Fatal("expected same seed inside one epoch")
+	}
+	if EpochSeedForHeight(spec, 15) == EpochSeedForHeight(spec, 16) {
+		t.Fatal("expected seed change across epoch boundary")
+	}
+	other := spec
+	other.GenesisHash = Hash(sha256.Sum256([]byte("other-anchor")))
+	if EpochSeedForHeight(spec, 1) == EpochSeedForHeight(other, 1) {
+		t.Fatal("expected seed to depend on genesis hash")
 	}
 }
 

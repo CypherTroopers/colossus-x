@@ -53,6 +53,7 @@ type Spec struct {
 	DeviceExecutionOnly    bool
 	RoundCommitInterval    uint32
 	AlgorithmVersion       uint32
+	GenesisHash            [32]byte
 }
 
 func StrictSpec() Spec {

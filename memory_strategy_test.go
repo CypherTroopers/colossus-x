@@ -141,11 +141,14 @@ func TestResolveDAGStrategyForModeStrictAllowsHostAllocators(t *testing.T) {
 	}
 }
 
-func TestValidateStrictProductionConfigAllowsAllConfiguredBackends(t *testing.T) {
-	if err := ValidateStrictProductionConfig(cx.ModeStrict, BackendCPU, "auto"); err != nil {
-		t.Fatalf("expected cpu backend to pass validation, got: %v", err)
+func TestValidateStrictProductionConfigEnforcesProductionRules(t *testing.T) {
+	if err := ValidateStrictProductionConfig(cx.ModeStrict, BackendCPU, "auto"); err == nil {
+		t.Fatal("expected cpu backend to be rejected in strict production")
+	}
+	if err := ValidateStrictProductionConfig(cx.ModeStrict, BackendUnified, "go-heap"); err == nil {
+		t.Fatal("expected host allocator to be rejected in strict production")
 	}
 	if err := ValidateStrictProductionConfig(cx.ModeStrict, BackendUnified, "auto"); err != nil {
-		t.Fatalf("expected unified backend to pass validation, got: %v", err)
+		t.Fatalf("expected unified backend auto allocator to pass validation, got: %v", err)
 	}
 }
