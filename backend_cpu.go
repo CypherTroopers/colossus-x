@@ -2,12 +2,12 @@ package miner
 
 import cx "colossusx/colossusx"
 
-type cpuNode [64]byte
+type cpuNode []byte
 
 type cpuDAGView struct{ nodes []cpuNode }
 
-func (v cpuDAGView) NodeCount() uint64                { return uint64(len(v.nodes)) }
-func (v cpuDAGView) ReadNode(i uint64, out *[64]byte) { *out = [64]byte(v.nodes[i]) }
+func (v cpuDAGView) NodeCount() uint64             { return uint64(len(v.nodes)) }
+func (v cpuDAGView) ReadNode(i uint64, out []byte) { copy(out, v.nodes[i]) }
 
 type CPUBackend struct {
 	spec    Spec
@@ -30,7 +30,7 @@ func (b *CPUBackend) Prepare(dag *DAG) error {
 	count := dag.NodeCount()
 	b.nodes = make([]cpuNode, count)
 	for i := uint64(0); i < count; i++ {
-		copy(b.nodes[i][:], dag.Node(i))
+		b.nodes[i] = append(make([]byte, 0, b.spec.NodeSize), dag.Node(i)...)
 	}
 	return nil
 }

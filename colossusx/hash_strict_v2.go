@@ -1,63 +1,106 @@
 package colossusx
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
+
+	"github.com/zeebo/blake3"
+	"golang.org/x/crypto/sha3"
 )
 
-type tensorView struct{ dag *DAG }
+const StrictAuditCellCount = 32
 
-func (v tensorView) TileCount() uint64 { return v.dag.NodeCount() }
-func (v tensorView) ReadTensorTile(i uint64, out *TensorTile) {
-	raw := v.dag.Node(i)
-	for j := 0; j < 256; j++ {
-		out.MatrixA[j] = int8(raw[j%64])
-		out.MatrixB[j] = int8(raw[(j+17)%64])
-	}
-	for j := 0; j < 16; j++ {
-		out.Bias[j] = int32(int8(raw[j]))
-	}
-	copy(out.Permute[:], raw[:32])
-	copy(out.Meta[:], raw[32:64])
+type StrictV2Trace struct {
+	InitialHash  [64]byte
+	MixDigest    [64]byte
+	Accessed     []uint32
+	Result       [32]byte
+	SolutionHash [32]byte
 }
 
-func StrictV2Hash(spec Spec, header []byte, nonce Nonce, dag TensorDAGAccessor) HashResult {
+func StrictV2Hash(spec Spec, header []byte, nonce Nonce, dag DAGAccessor) HashResult {
+	trace := StrictV2TraceHash(spec, header, nonce, dag)
 	var out HashResult
-	if dag == nil || dag.TileCount() == 0 {
-		return out
+	copy(out.Pow256[:], trace.Result[:])
+	copy(out.Full512[:], append(trace.InitialHash[:32], trace.MixDigest[:32]...))
+	return out
+}
+
+func StrictV2TraceHash(spec Spec, header []byte, nonce Nonce, dag DAGAccessor) StrictV2Trace {
+	var trace StrictV2Trace
+	if dag == nil || dag.NodeCount() == 0 {
+		return trace
 	}
 	seedInput := append([]byte{}, header...)
 	if nonce != nil {
 		seedInput = nonce.AppendTo(seedInput)
 	}
-	seed := sha256.Sum256(seedInput)
-	state := seed
-	for r := uint32(0); r < spec.ComputeRounds; r++ {
-		idx := binary.LittleEndian.Uint64(state[:8]) % dag.TileCount()
-		var tile TensorTile
-		dag.ReadTensorTile(idx, &tile)
-		var lane [16]int32
+	initial := sha3.Sum512(seedInput)
+	mix := initial
+	cell := make([]byte, spec.NodeSize)
+	accessed := make([]uint32, 0, spec.ReadsPerHash)
+
+	for round := uint64(0); round < spec.ReadsPerHash; round++ {
+		index := uint64(fnv1a32(uint32(round), binary.LittleEndian.Uint32(mix[:4]))) % dag.NodeCount()
+		accessed = append(accessed, uint32(index))
+		dag.ReadNode(index, cell)
+		mix = strictV2RoundMix(mix, cell)
+	}
+
+	finalInput := make([]byte, 0, len(initial)+len(mix))
+	finalInput = append(finalInput, initial[:]...)
+	finalInput = append(finalInput, mix[:]...)
+	pow := blake3.Sum256(finalInput)
+	var nonceBytes [8]byte
+	if n64, ok := nonce.(Uint64Nonce); ok {
+		binary.LittleEndian.PutUint64(nonceBytes[:], n64.Uint64())
+	}
+	solutionSeed := append(append(initial[:], mix[:]...), nonceBytes[:]...)
+	trace.SolutionHash = blake3.Sum256(solutionSeed)
+	trace.InitialHash = initial
+	trace.MixDigest = mix
+	trace.Result = pow
+	trace.Accessed = accessed
+	return trace
+}
+
+func StrictV2AuditIndices(pow [32]byte, dagCellCount uint64, count uint32) []uint64 {
+	if dagCellCount == 0 || count == 0 {
+		return nil
+	}
+	out := make([]uint64, 0, count)
+	var ctr [4]byte
+	for i := uint32(0); i < count; i++ {
+		binary.LittleEndian.PutUint32(ctr[:], i)
+		sum := sha3.Sum256(append(pow[:], ctr[:]...))
+		idx := binary.LittleEndian.Uint32(sum[:4])
+		out = append(out, uint64(idx)%dagCellCount)
+	}
+	return out
+}
+
+func StrictV2AuditIndicesFromSolutionHash(solutionHash [32]byte, dagCellCount uint64, count uint32) []uint64 {
+	return StrictV2AuditIndices(solutionHash, dagCellCount, count)
+}
+
+func strictV2RoundMix(mix [64]byte, cell []byte) [64]byte {
+	words := [16]uint32{}
+	for i := range words {
+		words[i] = binary.LittleEndian.Uint32(mix[i*4:])
+	}
+	for q := 0; q+64 <= len(cell); q += 64 {
+		quarter := cell[q : q+64]
 		for i := 0; i < 16; i++ {
-			acc := tile.Bias[i] + int32(state[i]) - int32(state[31-i])
-			for j := 0; j < 16; j++ {
-				acc += int32(tile.MatrixA[i*16+j]) * int32(tile.MatrixB[j*16+((i+int(r))%16)])
-			}
-			lane[i] = acc
-		}
-		var buf [64]byte
-		for i := 0; i < 16; i++ {
-			v := uint32(lane[i]) ^ uint32(tile.Meta[i]) ^ uint32(tile.Permute[i]) ^ uint32(r)
-			binary.LittleEndian.PutUint32(buf[i*4:], v)
-		}
-		state = sha256.Sum256(append(state[:], buf[:]...))
-		if spec.RoundCommitInterval > 0 && (r+1)%spec.RoundCommitInterval == 0 {
-			state = RoundCommit(r+1, state)
+			cw := binary.LittleEndian.Uint32(quarter[i*4:])
+			words[i] = fnv1a32(words[i], cw)
 		}
 	}
-	final := sha256.Sum256(state[:])
-	copy(out.Pow256[:], final[:])
-	dbl := sha256.Sum256(append(seed[:], final[:]...))
-	copy(out.Full512[:32], final[:])
-	copy(out.Full512[32:], dbl[:])
-	return out
+	var folded [64]byte
+	for i := range words {
+		binary.LittleEndian.PutUint32(folded[i*4:], words[i])
+	}
+	return sha3.Sum512(folded[:])
+}
+
+func fnv1a32(a, b uint32) uint32 {
+	return (a ^ b) * 0x01000193
 }

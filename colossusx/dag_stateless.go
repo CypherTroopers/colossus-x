@@ -3,8 +3,6 @@ package colossusx
 import (
 	"encoding/binary"
 	"errors"
-
-	"github.com/zeebo/blake3"
 )
 
 type StatelessDAG struct {
@@ -19,6 +17,9 @@ func NewStatelessDAG(spec Spec, epochSeed []byte) (*StatelessDAG, error) {
 	if len(epochSeed) == 0 {
 		return nil, errors.New("epoch seed cannot be empty")
 	}
+	if spec.Mode == ModeStrict {
+		return nil, errors.New("stateless dag is disabled for strict mode in production profile")
+	}
 	seed := append([]byte(nil), epochSeed...)
 	return &StatelessDAG{spec: spec, epochSeed: seed}, nil
 }
@@ -32,28 +33,23 @@ func (d *StatelessDAG) NodeCount() uint64 {
 
 func (d *StatelessDAG) TileCount() uint64 { return d.NodeCount() }
 
-func (d *StatelessDAG) ReadNode(i uint64, out *[64]byte) {
+func (d *StatelessDAG) ReadNode(i uint64, out []byte) {
 	if d == nil || out == nil {
 		return
 	}
-	if d.spec.Mode == ModeStrict {
-		node := d.strictNode(i)
-		copy(out[:], node[:])
-		return
-	}
 	node := d.researchNode(i)
-	copy(out[:], node[:])
+	copy(out, node)
 }
 
 func (d *StatelessDAG) ReadTensorTile(i uint64, out *TensorTile) {
 	if d == nil || out == nil {
 		return
 	}
-	var raw [64]byte
-	d.ReadNode(i, &raw)
+	raw := make([]byte, d.spec.NodeSize)
+	d.ReadNode(i, raw)
 	for j := 0; j < 256; j++ {
-		out.MatrixA[j] = int8(raw[j%64])
-		out.MatrixB[j] = int8(raw[(j+17)%64])
+		out.MatrixA[j] = int8(raw[j%len(raw)])
+		out.MatrixB[j] = int8(raw[(j+17)%len(raw)])
 	}
 	for j := 0; j < 16; j++ {
 		out.Bias[j] = int32(int8(raw[j]))
@@ -62,31 +58,29 @@ func (d *StatelessDAG) ReadTensorTile(i uint64, out *TensorTile) {
 	copy(out.Meta[:], raw[32:64])
 }
 
-func (d *StatelessDAG) researchNode(i uint64) [64]byte {
+func (d *StatelessDAG) researchNode(i uint64) []byte {
 	tmp := make([]byte, len(d.epochSeed)+8)
 	copy(tmp, d.epochSeed)
 	binary.LittleEndian.PutUint64(tmp[len(d.epochSeed):], i)
-	return keccak512(tmp)
-}
-
-func (d *StatelessDAG) strictNode(i uint64) [64]byte {
-	var ctr [8]byte
-	binary.LittleEndian.PutUint64(ctr[:], i)
-	xof := blake3.New()
-	_, _ = xof.Write(d.epochSeed)
-	_, _ = xof.Write(ctr[:])
-	var raw [64]byte
-	_, _ = xof.Digest().Read(raw[:])
-	return raw
+	base := keccak512(tmp)
+	out := make([]byte, d.spec.NodeSize)
+	for off := uint64(0); off < d.spec.NodeSize; off += uint64(len(base)) {
+		n := copy(out[off:], base[:])
+		if n < len(base) {
+			break
+		}
+		base = keccak512(base[:])
+	}
+	return out
 }
 
 func HashHeaderStateless(spec Spec, header []byte, nonce Nonce, epochSeed []byte) (HashResult, error) {
+	if spec.Mode == ModeStrict || spec.AlgorithmVersion >= 2 {
+		return HashResult{}, errors.New("stateless strict verification is disabled; use merkle-backed strict solution verification")
+	}
 	dag, err := NewStatelessDAG(spec, epochSeed)
 	if err != nil {
 		return HashResult{}, err
-	}
-	if spec.AlgorithmVersion >= 2 {
-		return StrictV2Hash(spec, header, nonce, dag), nil
 	}
 	return LatticeHash(spec, header, nonce, dag, nil), nil
 }

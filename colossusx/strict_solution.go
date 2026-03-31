@@ -1,0 +1,191 @@
+package colossusx
+
+import (
+	"encoding/binary"
+	"errors"
+
+	"github.com/zeebo/blake3"
+	"golang.org/x/crypto/sha3"
+)
+
+type SolutionCell struct {
+	Index uint32
+	Data  []byte
+	Proof MerkleProof
+}
+
+type StrictSolution struct {
+	Nonce       uint64
+	MixDigest   [64]byte
+	MiningCells []SolutionCell
+	AuditCells  []SolutionCell
+}
+
+type CompactSolutionCell struct {
+	Index     uint32
+	Data      []byte
+	ProofRefs []uint32
+}
+
+type StrictSolutionCompact struct {
+	Nonce       uint64
+	MixDigest   [64]byte
+	Siblings    [][32]byte
+	MiningCells []CompactSolutionCell
+	AuditCells  []CompactSolutionCell
+}
+
+func BuildStrictSolution(spec Spec, header []byte, nonce uint64, dag DAGAccessor, leaves [][32]byte) (StrictSolution, [32]byte, error) {
+	if dag == nil || dag.NodeCount() == 0 {
+		return StrictSolution{}, [32]byte{}, errors.New("dag is empty")
+	}
+	if len(leaves) == 0 {
+		return StrictSolution{}, [32]byte{}, errors.New("merkle leaves are empty")
+	}
+	if uint64(len(leaves)) != dag.NodeCount() {
+		return StrictSolution{}, [32]byte{}, errors.New("merkle leaves must match dag node count")
+	}
+	trace := StrictV2TraceHash(spec, header, NewUint64Nonce(nonce), dag)
+	out := StrictSolution{
+		Nonce:       nonce,
+		MixDigest:   trace.MixDigest,
+		MiningCells: make([]SolutionCell, 0, len(trace.Accessed)),
+		AuditCells:  make([]SolutionCell, 0, StrictAuditCellCount),
+	}
+	for _, idx := range trace.Accessed {
+		cell := make([]byte, spec.NodeSize)
+		dag.ReadNode(uint64(idx), cell)
+		out.MiningCells = append(out.MiningCells, SolutionCell{
+			Index: idx,
+			Data:  cell,
+			Proof: BuildMerkleProof(leaves, int(idx)),
+		})
+	}
+	auditIdx := StrictV2AuditIndicesFromSolutionHash(trace.SolutionHash, dag.NodeCount(), StrictAuditCellCount)
+	for _, idx := range auditIdx {
+		cell := make([]byte, spec.NodeSize)
+		dag.ReadNode(idx, cell)
+		out.AuditCells = append(out.AuditCells, SolutionCell{
+			Index: uint32(idx),
+			Data:  cell,
+			Proof: BuildMerkleProof(leaves, int(idx)),
+		})
+	}
+	return out, trace.Result, nil
+}
+
+func VerifyStrictSolution(spec Spec, header []byte, target Target, merkleRoot [32]byte, solution StrictSolution) error {
+	initialInput := append([]byte{}, header...)
+	var nonceLE [8]byte
+	binary.LittleEndian.PutUint64(nonceLE[:], solution.Nonce)
+	initialInput = append(initialInput, nonceLE[:]...)
+	initial := sha3.Sum512(initialInput)
+	mix := initial
+	if len(solution.MiningCells) != int(spec.ReadsPerHash) {
+		return errors.New("invalid mining cell count")
+	}
+	for round, c := range solution.MiningCells {
+		expect := uint32(uint64(fnv1a32(uint32(round), binary.LittleEndian.Uint32(mix[:4]))) % spec.NodeCount())
+		if c.Index != expect {
+			return errors.New("invalid mining index")
+		}
+		if len(c.Data) != int(spec.NodeSize) {
+			return errors.New("invalid mining cell size")
+		}
+		leaf := blake3.Sum256(c.Data)
+		if !VerifyMerkleProof(merkleRoot, leaf, int(c.Index), c.Proof) {
+			return errors.New("invalid mining merkle proof")
+		}
+		mix = strictV2RoundMix(mix, c.Data)
+	}
+	if mix != solution.MixDigest {
+		return errors.New("mix digest mismatch")
+	}
+	finalInput := append(initial[:], mix[:]...)
+	result := blake3.Sum256(finalInput)
+	if !LessOrEqualBE(result, target) {
+		return errors.New("pow target mismatch")
+	}
+	solutionSeed := append(append(initial[:], mix[:]...), nonceLE[:]...)
+	solutionHash := blake3.Sum256(solutionSeed)
+	expectAudit := StrictV2AuditIndicesFromSolutionHash(solutionHash, spec.NodeCount(), StrictAuditCellCount)
+	if len(solution.AuditCells) != len(expectAudit) {
+		return errors.New("invalid audit cell count")
+	}
+	for i, c := range solution.AuditCells {
+		if uint64(c.Index) != expectAudit[i] {
+			return errors.New("invalid audit index")
+		}
+		leaf := blake3.Sum256(c.Data)
+		if !VerifyMerkleProof(merkleRoot, leaf, int(c.Index), c.Proof) {
+			return errors.New("invalid audit merkle proof")
+		}
+	}
+	return nil
+}
+
+func CompactStrictSolution(solution StrictSolution) StrictSolutionCompact {
+	pool := make([][32]byte, 0, 256)
+	indexBySibling := map[[32]byte]uint32{}
+	encodeCell := func(c SolutionCell) CompactSolutionCell {
+		refs := make([]uint32, 0, len(c.Proof))
+		for _, sib := range c.Proof {
+			ref, ok := indexBySibling[sib]
+			if !ok {
+				ref = uint32(len(pool))
+				pool = append(pool, sib)
+				indexBySibling[sib] = ref
+			}
+			refs = append(refs, ref)
+		}
+		return CompactSolutionCell{Index: c.Index, Data: c.Data, ProofRefs: refs}
+	}
+	out := StrictSolutionCompact{
+		Nonce:       solution.Nonce,
+		MixDigest:   solution.MixDigest,
+		MiningCells: make([]CompactSolutionCell, 0, len(solution.MiningCells)),
+		AuditCells:  make([]CompactSolutionCell, 0, len(solution.AuditCells)),
+	}
+	for _, c := range solution.MiningCells {
+		out.MiningCells = append(out.MiningCells, encodeCell(c))
+	}
+	for _, c := range solution.AuditCells {
+		out.AuditCells = append(out.AuditCells, encodeCell(c))
+	}
+	out.Siblings = pool
+	return out
+}
+
+func ExpandCompactStrictSolution(compact StrictSolutionCompact) (StrictSolution, error) {
+	decodeCell := func(c CompactSolutionCell) (SolutionCell, error) {
+		proof := make(MerkleProof, 0, len(c.ProofRefs))
+		for _, ref := range c.ProofRefs {
+			if int(ref) >= len(compact.Siblings) {
+				return SolutionCell{}, errors.New("invalid compact proof reference")
+			}
+			proof = append(proof, compact.Siblings[ref])
+		}
+		return SolutionCell{Index: c.Index, Data: c.Data, Proof: proof}, nil
+	}
+	out := StrictSolution{
+		Nonce:       compact.Nonce,
+		MixDigest:   compact.MixDigest,
+		MiningCells: make([]SolutionCell, 0, len(compact.MiningCells)),
+		AuditCells:  make([]SolutionCell, 0, len(compact.AuditCells)),
+	}
+	for _, c := range compact.MiningCells {
+		d, err := decodeCell(c)
+		if err != nil {
+			return StrictSolution{}, err
+		}
+		out.MiningCells = append(out.MiningCells, d)
+	}
+	for _, c := range compact.AuditCells {
+		d, err := decodeCell(c)
+		if err != nil {
+			return StrictSolution{}, err
+		}
+		out.AuditCells = append(out.AuditCells, d)
+	}
+	return out, nil
+}

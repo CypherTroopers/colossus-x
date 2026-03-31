@@ -12,6 +12,14 @@ type sharedDAGHashKernel interface {
 	HashBatchShared(header []byte, startNonce cx.Nonce, count uint64, dag rawContiguousDAGBuffer) ([]HashResult, error)
 }
 
+type rawDAGAccessor struct{ dag rawContiguousDAGBuffer }
+
+func (v rawDAGAccessor) NodeCount() uint64 { return v.dag.NodeCount }
+func (v rawDAGAccessor) ReadNode(i uint64, out []byte) {
+	off := i * v.dag.NodeSize
+	copy(out, v.dag.Bytes[off:off+v.dag.NodeSize])
+}
+
 // hostReferenceSharedDAGKernel is the validation/reference implementation for
 // hashing directly from the canonical contiguous DAG allocation on the host CPU.
 // It intentionally does not represent accelerator/device-kernel execution.
@@ -36,6 +44,9 @@ func (k *hostReferenceSharedDAGKernel) HashBatchShared(header []byte, startNonce
 }
 
 func latticeHashSharedBuffer(spec Spec, header []byte, nonce cx.Nonce, dag rawContiguousDAGBuffer) HashResult {
+	if spec.AlgorithmVersion >= 2 {
+		return cx.StrictV2Hash(spec, header, nonce, rawDAGAccessor{dag: dag})
+	}
 	var out HashResult
 	if dag.NodeCount == 0 || dag.NodeSize == 0 || dag.ByteLen == 0 {
 		return out
@@ -50,16 +61,16 @@ func latticeHashSharedBuffer(spec Spec, header []byte, nonce cx.Nonce, dag rawCo
 	var mix [32]byte
 	copy(mix[:], seed512[:32])
 	var fnvInput [40]byte
-	var node [64]byte
+	node := make([]byte, dag.NodeSize)
 	for r := uint64(0); r < spec.ReadsPerHash; r++ {
 		copy(fnvInput[:32], mix[:])
 		binary.LittleEndian.PutUint64(fnvInput[32:], r)
 
 		nodeIdx := fnv1a64(fnvInput[:]) % dag.NodeCount
-		readRawDAGNode(dag, nodeIdx, &node)
+		readRawDAGNode(dag, nodeIdx, node)
 
-		blakeInput := blake3RoundInput(mix, node)
-		sum := blake3.Sum256(blakeInput[:])
+		blakeInput := blake3RoundInput(mix, node, nil)
+		sum := blake3.Sum256(blakeInput)
 		copy(mix[:], sum[:])
 	}
 
@@ -72,18 +83,15 @@ func latticeHashSharedBuffer(spec Spec, header []byte, nonce cx.Nonce, dag rawCo
 	return out
 }
 
-func readRawDAGNode(dag rawContiguousDAGBuffer, idx uint64, out *[64]byte) {
+func readRawDAGNode(dag rawContiguousDAGBuffer, idx uint64, out []byte) {
 	off := idx * dag.NodeSize
-	copy(out[:], dag.Bytes[off:off+dag.NodeSize])
+	copy(out, dag.Bytes[off:off+dag.NodeSize])
 }
 
-func blake3RoundInput(mix [32]byte, node [64]byte) [64]byte {
-	var in [64]byte
-	for i := 0; i < 32; i++ {
-		in[i] = mix[i] ^ node[i]
-		in[32+i] = mix[i] ^ node[32+i]
-	}
-	return in
+func blake3RoundInput(mix [32]byte, node []byte, dst []byte) []byte {
+	dst = append(dst, mix[:]...)
+	dst = append(dst, node...)
+	return dst
 }
 
 func fnv1a64(data []byte) uint64 {

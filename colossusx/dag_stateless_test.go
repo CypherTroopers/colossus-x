@@ -40,10 +40,10 @@ func TestStatelessDAGReadNodeMatchesGenerateDAGResearchNode(t *testing.T) {
 		t.Fatalf("NewStatelessDAG: %v", err)
 	}
 	for i := uint64(0); i < spec.NodeCount(); i++ {
-		var got [64]byte
-		dag.ReadNode(i, &got)
+		got := make([]byte, spec.NodeSize)
+		dag.ReadNode(i, got)
 		off := i * spec.NodeSize
-		if want := buf[off : off+spec.NodeSize]; !bytes.Equal(got[:], want) {
+		if want := buf[off : off+spec.NodeSize]; !bytes.Equal(got, want) {
 			t.Fatalf("node %d mismatch", i)
 		}
 	}
@@ -78,7 +78,7 @@ func TestVerifyHeaderStatelessChecksTarget(t *testing.T) {
 }
 
 func TestHashHeaderStatelessSupportsDifferentResolvedSizesAcrossEpochs(t *testing.T) {
-	spec := ResearchSpecWithGrowth(64*16, 64, 8, 8)
+	spec := ResearchSpecWithGrowth(64*16, 256, 8, 8)
 	seedEpoch0 := []byte("0123456789abcdef0123456789abcdef")
 	seedEpoch1 := []byte("fedcba9876543210fedcba9876543210")
 	header := []byte("external-verifier-header")
@@ -94,5 +94,16 @@ func TestHashHeaderStatelessSupportsDifferentResolvedSizesAcrossEpochs(t *testin
 	}
 	if _, err := HashHeaderStateless(resolved1, header, nonce, seedEpoch1); err != nil {
 		t.Fatalf("HashHeaderStateless epoch1: %v", err)
+	}
+}
+
+func TestStrictStatelessDAGIsDisabled(t *testing.T) {
+	spec := StrictSpec()
+	seed := []byte("0123456789abcdef0123456789abcdef")
+	if _, err := NewStatelessDAG(spec, seed); err == nil {
+		t.Fatal("expected strict stateless DAG to be disabled")
+	}
+	if _, err := HashHeaderStateless(spec, []byte("header"), NewUint64Nonce(1), seed); err == nil {
+		t.Fatal("expected strict stateless hashing to be disabled")
 	}
 }

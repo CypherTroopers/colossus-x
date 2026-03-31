@@ -14,18 +14,22 @@ type HashResult struct {
 
 type DAGAccessor interface {
 	NodeCount() uint64
-	ReadNode(uint64, *[64]byte)
+	ReadNode(uint64, []byte)
 }
 
 type HashScratch struct {
 	seedInput  []byte
-	finalInput [96]byte
+	finalInput []byte
 	fnvInput   [40]byte
-	blakeInput [64]byte
+	blakeInput []byte
 }
 
 func NewHashScratch(headerLen int) *HashScratch {
-	return &HashScratch{seedInput: make([]byte, 0, headerLen+8)}
+	return &HashScratch{
+		seedInput:  make([]byte, 0, headerLen+8),
+		finalInput: make([]byte, 0, 96),
+		blakeInput: make([]byte, 0, 288),
+	}
 }
 
 func EnsureSeedInput(s *HashScratch, headerLen int, nonce Nonce) {
@@ -46,12 +50,7 @@ func EnsureSeedInput(s *HashScratch, headerLen int, nonce Nonce) {
 
 func LatticeHash(spec Spec, header []byte, nonce Nonce, accessor DAGAccessor, scratch *HashScratch) HashResult {
 	if spec.AlgorithmVersion >= 2 {
-		if dag, ok := accessor.(*DAG); ok {
-			return StrictV2Hash(spec, header, nonce, tensorView{dag: dag})
-		}
-		if dag, ok := accessor.(interface{ UnderlyingDAG() *DAG }); ok && dag.UnderlyingDAG() != nil {
-			return StrictV2Hash(spec, header, nonce, tensorView{dag: dag.UnderlyingDAG()})
-		}
+		return StrictV2Hash(spec, header, nonce, accessor)
 	}
 
 	var out HashResult
@@ -71,37 +70,33 @@ func LatticeHash(spec Spec, header []byte, nonce Nonce, accessor DAGAccessor, sc
 	var mix [32]byte
 	copy(mix[:], seed512[:32])
 
-	var node [64]byte
+	node := make([]byte, spec.NodeSize)
 	for r := uint64(0); r < spec.ReadsPerHash; r++ {
 		copy(scratch.fnvInput[:32], mix[:])
 		binary.LittleEndian.PutUint64(scratch.fnvInput[32:], r)
 
 		nodeIdx := fnv1a64(scratch.fnvInput[:]) % accessor.NodeCount()
-		accessor.ReadNode(nodeIdx, &node)
+		accessor.ReadNode(nodeIdx, node)
 
-		scratch.blakeInput = blake3RoundInput(mix, node)
-
-		sum := blake3.Sum256(scratch.blakeInput[:])
+		scratch.blakeInput = blake3RoundInput(mix, node, scratch.blakeInput[:0])
+		sum := blake3.Sum256(scratch.blakeInput)
 		copy(mix[:], sum[:])
 	}
 
-	copy(scratch.finalInput[:64], seed512[:])
-	copy(scratch.finalInput[64:], mix[:])
-	final512 := sha3.Sum512(scratch.finalInput[:])
+	scratch.finalInput = append(scratch.finalInput[:0], seed512[:]...)
+	scratch.finalInput = append(scratch.finalInput, mix[:]...)
+	final512 := sha3.Sum512(scratch.finalInput)
 	copy(out.Full512[:], final512[:])
 	copy(out.Pow256[:], final512[:32])
 	return out
 }
 
-// The Blake3 round input is a deterministic 64-byte buffer formed by XORing
-// the 32-byte mix against each 32-byte half of the 64-byte DAG node.
-func blake3RoundInput(mix [32]byte, node [64]byte) [64]byte {
-	var in [64]byte
-	for i := 0; i < 32; i++ {
-		in[i] = mix[i] ^ node[i]
-		in[32+i] = mix[i] ^ node[32+i]
-	}
-	return in
+// The Blake3 round input is a deterministic concatenation of mix state and
+// full DAG node bytes.
+func blake3RoundInput(mix [32]byte, node []byte, dst []byte) []byte {
+	dst = append(dst, mix[:]...)
+	dst = append(dst, node...)
+	return dst
 }
 
 func fnv1a64(data []byte) uint64 {

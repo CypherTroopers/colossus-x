@@ -76,14 +76,14 @@ func (d *DAG) Node(i uint64) []byte {
 	buf := d.Bytes()
 	return buf[off : off+d.spec.NodeSize]
 }
-func (d *DAG) ReadNode(i uint64, out *[64]byte) { copy(out[:], d.Node(i)) }
+func (d *DAG) ReadNode(i uint64, out []byte) { copy(out, d.Node(i)) }
 
 func (d *DAG) TileCount() uint64 { return d.NodeCount() }
 func (d *DAG) ReadTensorTile(i uint64, out *TensorTile) {
 	raw := d.Node(i)
 	for j := 0; j < 256; j++ {
-		out.MatrixA[j] = int8(raw[j%64])
-		out.MatrixB[j] = int8(raw[(j+17)%64])
+		out.MatrixA[j] = int8(raw[j%len(raw)])
+		out.MatrixB[j] = int8(raw[(j+17)%len(raw)])
 	}
 	for j := 0; j < 16; j++ {
 		out.Bias[j] = int32(int8(raw[j]))
@@ -120,6 +120,14 @@ func generateDAG(spec Spec, dag []byte, epochSeed []byte, workers int, done *ato
 	}
 
 	nodeCount := spec.NodeCount()
+	if spec.Mode == ModeStrict {
+		generateStrictV2DAG(spec, dag, epochSeed, workers, func() {
+			if done != nil {
+				done.Add(1)
+			}
+		})
+		return nil
+	}
 	chunk := nodeCount / uint64(workers)
 	if chunk == 0 {
 		chunk = 1
@@ -141,10 +149,17 @@ func generateDAG(spec Spec, dag []byte, epochSeed []byte, workers int, done *ato
 			tmp := make([]byte, len(epochSeed)+8)
 			copy(tmp, epochSeed)
 			for i := from; i < to; i++ {
+				off := i * spec.NodeSize
+				node := dag[off : off+spec.NodeSize]
 				binary.LittleEndian.PutUint64(tmp[len(epochSeed):], i)
 				sum := keccak512(tmp)
-				off := i * spec.NodeSize
-				copy(dag[off:off+spec.NodeSize], sum[:])
+				for pos := uint64(0); pos < spec.NodeSize; pos += uint64(len(sum)) {
+					n := copy(node[pos:], sum[:])
+					if n < len(sum) {
+						break
+					}
+					sum = keccak512(sum[:])
+				}
 				if done != nil {
 					done.Add(1)
 				}
@@ -181,15 +196,6 @@ func PopulateDAGWithProgress(dag *DAG, epochSeed []byte, workers int, progress f
 			}
 		}()
 		defer close(stop)
-	}
-	if dag.spec.Mode == ModeStrict {
-		if err := generateTensorDAG(dag.spec, dag.Bytes(), epochSeed, workers, &done); err != nil {
-			return err
-		}
-		if progress != nil {
-			progress(total, total)
-		}
-		return nil
 	}
 	if err := generateDAG(dag.spec, dag.Bytes(), epochSeed, workers, &done); err != nil {
 		return err
