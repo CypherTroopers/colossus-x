@@ -11,9 +11,9 @@ type sliceAccessor struct {
 }
 
 func (a sliceAccessor) NodeCount() uint64 { return a.spec.NodeCount() }
-func (a sliceAccessor) ReadNode(i uint64, out *[64]byte) {
+func (a sliceAccessor) ReadNode(i uint64, out []byte) {
 	off := i * a.spec.NodeSize
-	copy(out[:], a.buf[off:off+a.spec.NodeSize])
+	copy(out, a.buf[off:off+a.spec.NodeSize])
 }
 
 func testSpec() Spec {
@@ -105,11 +105,11 @@ func TestStrictModeDynamicDAGProfile(t *testing.T) {
 	if err := strict.Validate(); err != nil {
 		t.Fatalf("StrictSpec should validate: %v", err)
 	}
-	if strict.InitialDAGSizeBytes != 8*1024*1024*1024 {
-		t.Fatalf("expected strict initial DAG size 8GiB, got %d", strict.InitialDAGSizeBytes)
+	if strict.InitialDAGSizeBytes != 80*1024*1024*1024 {
+		t.Fatalf("expected strict initial DAG size 80GiB, got %d", strict.InitialDAGSizeBytes)
 	}
-	if strict.DAGGrowthBytesPerEpoch != 512*1024*1024 {
-		t.Fatalf("expected strict DAG growth 512MiB, got %d", strict.DAGGrowthBytesPerEpoch)
+	if strict.DAGGrowthBytesPerEpoch != 256*1024*1024 {
+		t.Fatalf("expected strict DAG growth 256MiB, got %d", strict.DAGGrowthBytesPerEpoch)
 	}
 	if strict.DAGSizeForHeight(strict.EpochBlocks) <= strict.DAGSizeForHeight(0) {
 		t.Fatal("expected strict DAG size to grow after an epoch")
@@ -129,22 +129,35 @@ func TestGenerateDAGUsesKeccak512(t *testing.T) {
 	}
 }
 
-func TestBlake3RoundInputUsesBothNodeHalves(t *testing.T) {
+func TestBlake3RoundInputIncludesMixAndNode(t *testing.T) {
 	var mix [32]byte
-	var node [64]byte
+	node := make([]byte, 96)
 	for i := range mix {
 		mix[i] = byte(i + 1)
 	}
 	for i := range node {
 		node[i] = byte(255 - i)
 	}
-	in := blake3RoundInput(mix, node)
+	in := blake3RoundInput(mix, node, nil)
+	if len(in) != len(mix)+len(node) {
+		t.Fatalf("unexpected round input size: %d", len(in))
+	}
 	for i := 0; i < 32; i++ {
-		if in[i] != mix[i]^node[i] {
-			t.Fatalf("first half mismatch at %d", i)
+		if in[i] != mix[i] {
+			t.Fatalf("mix prefix mismatch at %d", i)
 		}
-		if in[32+i] != mix[i]^node[32+i] {
-			t.Fatalf("second half mismatch at %d", i)
+	}
+}
+
+func TestStrictV2AuditIndicesCountAndBounds(t *testing.T) {
+	pow := [32]byte{1, 2, 3, 4}
+	indices := StrictV2AuditIndices(pow, 17, StrictAuditCellCount)
+	if len(indices) != int(StrictAuditCellCount) {
+		t.Fatalf("unexpected audit index count: %d", len(indices))
+	}
+	for i, idx := range indices {
+		if idx >= 17 {
+			t.Fatalf("index out of bounds at %d: %d", i, idx)
 		}
 	}
 }

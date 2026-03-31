@@ -7,11 +7,13 @@ import (
 )
 
 const (
-	StrictInitialDAGSizeBytes     uint64 = 8 * 1024 * 1024 * 1024
-	DefaultDAGGrowthBytesPerEpoch uint64 = 512 * 1024 * 1024
-	StrictNodeSize                uint64 = 64
-	StrictReadsPerHash            uint64 = 512
-	StrictEpochBlocks             uint64 = 8000
+	StrictInitialDAGSizeBytes     uint64 = 80 * 1024 * 1024 * 1024
+	DefaultDAGGrowthBytesPerEpoch uint64 = 256 * 1024 * 1024
+	StrictNodeSize                uint64 = 256
+	StrictReadsPerHash            uint64 = 128
+	StrictEpochBlocks             uint64 = 7200
+	StrictEpochPrecomputeWindow   uint64 = 1000
+	StrictEpochGraceBlocks        uint64 = 64
 
 	StrictV2TileSizeBytes     uint64 = 4096
 	StrictV2MatDim            uint32 = 16

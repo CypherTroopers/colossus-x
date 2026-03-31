@@ -23,13 +23,16 @@ type BlockHeader struct {
 	Nonce            uint64    `json:"nonce"`
 	EpochSeed        Hash      `json:"epoch_seed"`
 	DAGSizeBytes     uint64    `json:"dag_size_bytes"` // resolved DAG size for this block height
+	DAGMerkleRoot    Hash      `json:"dag_merkle_root"`
 	TxRoot           Hash      `json:"tx_root"`
 	StateRoot        Hash      `json:"state_root"`
 }
 
 type Block struct {
-	Header       BlockHeader `json:"header"`
-	Transactions []string    `json:"transactions,omitempty"`
+	Header                BlockHeader               `json:"header"`
+	Transactions          []string                  `json:"transactions,omitempty"`
+	StrictSolution        *cx.StrictSolution        `json:"strict_solution,omitempty"`
+	StrictSolutionCompact *cx.StrictSolutionCompact `json:"strict_solution_compact,omitempty"`
 }
 
 type GenesisConfig struct {
@@ -81,7 +84,7 @@ func (h *Hash) UnmarshalJSON(data []byte) error {
 	return nil
 }
 func (h BlockHeader) EncodeForMining() []byte {
-	buf := make([]byte, 0, 4+4+8+32+8+32+32+8+32+32)
+	buf := make([]byte, 0, 4+4+8+32+8+32+32+8+32+32+32)
 	buf = binary.BigEndian.AppendUint32(buf, h.Version)
 	buf = binary.BigEndian.AppendUint32(buf, h.AlgorithmVersion)
 	buf = binary.BigEndian.AppendUint64(buf, h.Height)
@@ -90,6 +93,7 @@ func (h BlockHeader) EncodeForMining() []byte {
 	buf = append(buf, h.Target[:]...)
 	buf = append(buf, h.EpochSeed[:]...)
 	buf = binary.BigEndian.AppendUint64(buf, h.DAGSizeBytes)
+	buf = append(buf, h.DAGMerkleRoot[:]...)
 	buf = append(buf, h.TxRoot[:]...)
 	buf = append(buf, h.StateRoot[:]...)
 	return buf
@@ -107,7 +111,7 @@ func NewGenesisBlock(cfg GenesisConfig) Block {
 	txRoot = sha256.Sum256([]byte(cfg.Message))
 	stateRoot = sha256.Sum256([]byte(cfg.ExtraData))
 	resolved := cfg.Spec.ResolvedForHeight(0)
-	return Block{Header: BlockHeader{Version: 1, AlgorithmVersion: resolved.AlgorithmVersion, Height: 0, ParentHash: Hash{}, Timestamp: cfg.Timestamp, Target: cfg.Bits, Nonce: 0, EpochSeed: EpochSeedForHeight(resolved, 0), DAGSizeBytes: resolved.DAGSizeBytes, TxRoot: txRoot, StateRoot: stateRoot}}
+	return Block{Header: BlockHeader{Version: 1, AlgorithmVersion: resolved.AlgorithmVersion, Height: 0, ParentHash: Hash{}, Timestamp: cfg.Timestamp, Target: cfg.Bits, Nonce: 0, EpochSeed: EpochSeedForHeight(resolved, 0), DAGSizeBytes: resolved.DAGSizeBytes, DAGMerkleRoot: Hash{}, TxRoot: txRoot, StateRoot: stateRoot}}
 }
 func EpochSeedForHeight(spec cx.Spec, height uint64) Hash {
 	var seedMaterial [16]byte

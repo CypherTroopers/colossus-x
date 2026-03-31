@@ -22,10 +22,10 @@ func TestParseCLIConfigStrictModeAllowsDynamicDAGProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseCLIConfig: %v", err)
 	}
-	if cfg.Spec.InitialDAGSizeBytes != 8*1024*1024*1024 {
+	if cfg.Spec.InitialDAGSizeBytes != 80*1024*1024*1024 {
 		t.Fatalf("unexpected strict initial DAG size: %d", cfg.Spec.InitialDAGSizeBytes)
 	}
-	if cfg.Spec.DAGGrowthBytesPerEpoch != 512*1024*1024 {
+	if cfg.Spec.DAGGrowthBytesPerEpoch != 256*1024*1024 {
 		t.Fatalf("unexpected strict DAG growth: %d", cfg.Spec.DAGGrowthBytesPerEpoch)
 	}
 }
@@ -136,11 +136,11 @@ func TestStrictSpecLocksSectionTwoConstants(t *testing.T) {
 	if spec.ReadsPerHash != cx.StrictReadsPerHash {
 		t.Fatalf("expected strict reads/hash %d, got %d", cx.StrictReadsPerHash, spec.ReadsPerHash)
 	}
-	if spec.ReadsPerHash != 512 {
-		t.Fatalf("expected strict spec to preserve Section 2 bandwidth target reads/hash, got %d", spec.ReadsPerHash)
+	if spec.ReadsPerHash != 128 {
+		t.Fatalf("expected strict spec to preserve v2 reads/hash target, got %d", spec.ReadsPerHash)
 	}
-	if spec.EpochBlocks != 8000 {
-		t.Fatalf("expected strict epoch blocks 8000, got %d", spec.EpochBlocks)
+	if spec.EpochBlocks != 7200 {
+		t.Fatalf("expected strict epoch blocks 7200, got %d", spec.EpochBlocks)
 	}
 }
 

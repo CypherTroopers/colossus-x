@@ -36,6 +36,7 @@ type Validator struct {
 	allocator              cx.Allocator
 	miningBackend          cx.HashBackend
 	miningAllocator        cx.Allocator
+	strictMerkleRoots      map[string][32]byte
 }
 
 type dagKey struct {
@@ -93,6 +94,7 @@ func NewValidator(cfg types.ChainConfig, backend cx.HashBackend, workers int) (*
 		allocator:              sliceAllocator{},
 		miningBackend:          backend,
 		miningAllocator:        sliceAllocator{},
+		strictMerkleRoots:      make(map[string][32]byte),
 	}, nil
 }
 
@@ -108,6 +110,9 @@ func (v *Validator) SetMiningBackend(backend cx.HashBackend, allocator cx.Alloca
 	for key, dag := range v.sharedDAGs {
 		_ = dag.Close()
 		delete(v.sharedDAGs, key)
+	}
+	for key := range v.strictMerkleRoots {
+		delete(v.strictMerkleRoots, key)
 	}
 }
 
@@ -133,13 +138,8 @@ func (v *Validator) ValidateHeader(store chain.Store, header types.BlockHeader) 
 	if header.AlgorithmVersion != v.config.Spec.AlgorithmVersion {
 		return fmt.Errorf("%w: algorithm version mismatch", ErrInvalidEpoch)
 	}
-	expectedDAGSize := v.config.Spec.DAGSizeForHeight(header.Height)
-	if header.DAGSizeBytes != expectedDAGSize {
-		return fmt.Errorf("%w: dag size mismatch expected=%d got=%d", ErrInvalidEpoch, expectedDAGSize, header.DAGSizeBytes)
-	}
-	expectedSeed := types.EpochSeedForHeight(v.config.Spec, header.Height)
-	if expectedSeed != header.EpochSeed {
-		return fmt.Errorf("%w: epoch seed mismatch", ErrInvalidEpoch)
+	if err := v.validateEpochParameters(header); err != nil {
+		return err
 	}
 	if header.Target == (cx.Target{}) {
 		return ErrInvalidTarget
@@ -164,11 +164,46 @@ func (v *Validator) ValidateHeader(store chain.Store, header types.BlockHeader) 
 	if header.Timestamp > now {
 		return fmt.Errorf("%w: timestamp %d too far ahead of %d", ErrInvalidTimestamp, header.Timestamp, now)
 	}
-	return v.validatePoW(header)
+	if header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeStrict {
+		if header.DAGMerkleRoot == (types.Hash{}) {
+			return fmt.Errorf("%w: strict header missing dag merkle root", ErrInvalidPoW)
+		}
+		return nil
+	}
+	return v.validatePoW(types.Block{Header: header})
 }
 
 func (v *Validator) ValidateBlock(store chain.Store, block types.Block) error {
-	return v.ValidateHeader(store, block.Header)
+	if err := v.ValidateHeader(store, block.Header); err != nil {
+		return err
+	}
+	return v.validatePoW(block)
+}
+
+func (v *Validator) validateEpochParameters(header types.BlockHeader) error {
+	currentSize := v.config.Spec.DAGSizeForHeight(header.Height)
+	currentSeed := types.EpochSeedForHeight(v.config.Spec, header.Height)
+	if header.DAGSizeBytes == currentSize && header.EpochSeed == currentSeed {
+		return nil
+	}
+	epochBlocks := v.config.Spec.EpochBlocks
+	if epochBlocks == 0 {
+		return fmt.Errorf("%w: invalid epoch config", ErrInvalidEpoch)
+	}
+	if header.Height < epochBlocks {
+		return fmt.Errorf("%w: dag size/seed mismatch", ErrInvalidEpoch)
+	}
+	offset := header.Height % epochBlocks
+	if offset >= cx.StrictEpochGraceBlocks {
+		return fmt.Errorf("%w: dag size/seed mismatch outside grace window", ErrInvalidEpoch)
+	}
+	prevHeight := header.Height - epochBlocks
+	prevSize := v.config.Spec.DAGSizeForHeight(prevHeight)
+	prevSeed := types.EpochSeedForHeight(v.config.Spec, prevHeight)
+	if header.DAGSizeBytes == prevSize && header.EpochSeed == prevSeed {
+		return nil
+	}
+	return fmt.Errorf("%w: epoch seed/dag size mismatch", ErrInvalidEpoch)
 }
 
 func CalcBlockWork(target cx.Target) *big.Int {
@@ -241,6 +276,13 @@ func (v *Validator) SealBlock(block types.Block, maxNonces uint64) (types.Block,
 	if err := backend.Prepare(dag); err != nil {
 		return types.Block{}, cx.MineResult{}, err
 	}
+	var strictLeaves [][32]byte
+	if block.Header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeStrict {
+		strictLeaves = dagMerkleLeaves(dag)
+		root := cx.BuildMerkleRoot(strictLeaves)
+		block.Header.DAGMerkleRoot = types.Hash(root)
+		v.cacheMerkleRoot(v.sharedDAGCacheKey(block.Header), root)
+	}
 	miner, err := cx.NewMiner(v.config.Spec, dag, v.workers, sealSkipPrepareBackend{backend})
 	if err != nil {
 		return types.Block{}, cx.MineResult{}, err
@@ -254,6 +296,15 @@ func (v *Validator) SealBlock(block types.Block, maxNonces uint64) (types.Block,
 		return types.Block{}, cx.MineResult{}, errors.New("unexpected nonce type")
 	}
 	block.Header.Nonce = nonce.Uint64()
+	if block.Header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeStrict {
+		solution, _, err := cx.BuildStrictSolution(dag.Spec(), block.Header.EncodeForMining(), nonce.Uint64(), dag, strictLeaves)
+		if err != nil {
+			return types.Block{}, cx.MineResult{}, err
+		}
+		compact := cx.CompactStrictSolution(solution)
+		block.StrictSolutionCompact = &compact
+		block.StrictSolution = nil
+	}
 	return block, res, nil
 }
 
@@ -271,6 +322,7 @@ func (v *Validator) Close() error {
 			seen[dag] = struct{}{}
 		}
 		delete(v.fallbackValidationDAGs, key)
+		delete(v.strictMerkleRoots, key)
 	}
 	for key, dag := range v.sharedDAGs {
 		if _, ok := seen[dag]; !ok {
@@ -278,20 +330,75 @@ func (v *Validator) Close() error {
 			seen[dag] = struct{}{}
 		}
 		delete(v.sharedDAGs, key)
+		delete(v.strictMerkleRoots, key)
 	}
 	return nil
 }
 
-func (v *Validator) validatePoW(header types.BlockHeader) error {
+func (v *Validator) validatePoW(block types.Block) error {
+	header := block.Header
 	dag, err := v.validationDAGForHeader(header)
 	if err != nil {
 		return err
+	}
+	if header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeStrict {
+		var solution cx.StrictSolution
+		switch {
+		case block.StrictSolution != nil:
+			solution = *block.StrictSolution
+		case block.StrictSolutionCompact != nil:
+			expanded, err := cx.ExpandCompactStrictSolution(*block.StrictSolutionCompact)
+			if err != nil {
+				return fmt.Errorf("%w: invalid compact strict solution: %v", ErrInvalidPoW, err)
+			}
+			solution = expanded
+		default:
+			return fmt.Errorf("%w: strict solution is required", ErrInvalidPoW)
+		}
+		root := v.merkleRootForDAG(header, dag)
+		if root != [32]byte(header.DAGMerkleRoot) {
+			return fmt.Errorf("%w: dag merkle root mismatch", ErrInvalidPoW)
+		}
+		if err := cx.VerifyStrictSolution(dag.Spec(), header.EncodeForMining(), header.Target, root, solution); err != nil {
+			return fmt.Errorf("%w: strict solution verify failed: %v", ErrInvalidPoW, err)
+		}
+		return nil
 	}
 	hash := v.backend.Hash(header.EncodeForMining(), cx.NewUint64Nonce(header.Nonce), dag)
 	if !cx.LessOrEqualBE(hash.Pow256, header.Target) {
 		return fmt.Errorf("%w: pow=%s target=%s", ErrInvalidPoW, hex.EncodeToString(hash.Pow256[:]), header.Target.String())
 	}
 	return nil
+}
+
+func dagMerkleLeaves(dag *cx.DAG) [][32]byte {
+	if dag == nil {
+		return nil
+	}
+	cells := make([][]byte, dag.NodeCount())
+	for i := uint64(0); i < dag.NodeCount(); i++ {
+		cells[i] = dag.Node(i)
+	}
+	return cx.BuildMerkleLeaves(cells)
+}
+
+func (v *Validator) merkleRootForDAG(header types.BlockHeader, dag *cx.DAG) [32]byte {
+	key := v.sharedDAGCacheKey(header)
+	v.mu.Lock()
+	if root, ok := v.strictMerkleRoots[key]; ok {
+		v.mu.Unlock()
+		return root
+	}
+	v.mu.Unlock()
+	root := cx.BuildMerkleRoot(dagMerkleLeaves(dag))
+	v.cacheMerkleRoot(key, root)
+	return root
+}
+
+func (v *Validator) cacheMerkleRoot(key string, root [32]byte) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.strictMerkleRoots[key] = root
 }
 
 func (v *Validator) validationDAGForHeader(header types.BlockHeader) (*cx.DAG, error) {
@@ -393,6 +500,9 @@ func (v *Validator) cachedDAGForHeader(header types.BlockHeader, allocator cx.Al
 		return nil, err
 	}
 	cache[key] = dag
+	if spec.AlgorithmVersion >= 2 || spec.Mode == cx.ModeStrict {
+		v.strictMerkleRoots[key] = cx.BuildMerkleRoot(dagMerkleLeaves(dag))
+	}
 	return dag, nil
 }
 

@@ -21,8 +21,8 @@ func latticeHashWithAccessor(spec Spec, header []byte, nonce cx.Nonce, accessor 
 
 type contiguousDAGView struct{ dag *DAG }
 
-func (v contiguousDAGView) NodeCount() uint64                { return v.dag.NodeCount() }
-func (v contiguousDAGView) ReadNode(i uint64, out *[64]byte) { v.dag.ReadNode(i, out) }
+func (v contiguousDAGView) NodeCount() uint64             { return v.dag.NodeCount() }
+func (v contiguousDAGView) ReadNode(i uint64, out []byte) { v.dag.ReadNode(i, out) }
 
 type rawContiguousDAGBuffer struct {
 	Ptr       unsafe.Pointer
@@ -70,9 +70,9 @@ func newUnifiedMemoryDAGViewFromBytes(spec Spec, buf []byte) (unifiedMemoryDAGVi
 }
 
 func (v unifiedMemoryDAGView) NodeCount() uint64 { return v.nodeCount }
-func (v unifiedMemoryDAGView) ReadNode(i uint64, out *[64]byte) {
+func (v unifiedMemoryDAGView) ReadNode(i uint64, out []byte) {
 	off := i * v.nodeSize
-	copy(out[:], v.buf[off:off+v.nodeSize])
+	copy(out, v.buf[off:off+v.nodeSize])
 }
 
 type pooledScratch struct{ pool sync.Pool }

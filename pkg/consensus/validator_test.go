@@ -267,6 +267,69 @@ func TestSealBlockAndValidateBlockShareCommonCaseDAG(t *testing.T) {
 	}
 }
 
+func strictTestConfig(t *testing.T) (types.ChainConfig, types.GenesisConfig) {
+	t.Helper()
+	spec := cx.StrictSpec()
+	spec.InitialDAGSizeBytes = 256 * 16
+	spec.DAGSizeBytes = spec.InitialDAGSizeBytes
+	spec.DAGGrowthBytesPerEpoch = 256
+	target, err := cx.ParseTargetHex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chainCfg := types.ChainConfig{NetworkID: "strict-test", Spec: spec}
+	genesis := types.GenesisConfig{ChainID: "strict-test", Message: "strict", Timestamp: time.Now().Unix() - 1, Bits: target, Spec: spec}
+	return chainCfg, genesis
+}
+
+func TestStrictSealBlockUsesCompactSolutionAndValidates(t *testing.T) {
+	chainCfg, genesisCfg := strictTestConfig(t)
+	v, err := NewValidator(chainCfg, CPUBackend{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Close()
+	store := chain.NewMemoryStore()
+
+	genesis, _, err := v.SealBlock(types.NewGenesisBlock(genesisCfg), 2000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if genesis.StrictSolutionCompact == nil {
+		t.Fatal("expected compact strict solution to be attached")
+	}
+	if genesis.StrictSolution != nil {
+		t.Fatal("expected full strict solution to be omitted when compact is present")
+	}
+	if err := v.ValidateBlock(store, genesis); err != nil {
+		t.Fatalf("validate strict genesis: %v", err)
+	}
+}
+
+func TestStrictEpochGraceWindowAcceptsPreviousEpochSeedAndSize(t *testing.T) {
+	chainCfg, _ := strictTestConfig(t)
+	v, err := NewValidator(chainCfg, CPUBackend{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Close()
+
+	h := types.BlockHeader{
+		AlgorithmVersion: chainCfg.Spec.AlgorithmVersion,
+		Height:           chainCfg.Spec.EpochBlocks + 1, // grace window
+		EpochSeed:        types.EpochSeedForHeight(chainCfg.Spec, 0),
+		DAGSizeBytes:     chainCfg.Spec.DAGSizeForHeight(0),
+	}
+	// target isn't checked by validateEpochParameters, so call it directly.
+	if err := v.validateEpochParameters(h); err != nil {
+		t.Fatalf("expected previous-epoch params to be accepted in grace window: %v", err)
+	}
+	h.Height = chainCfg.Spec.EpochBlocks + cx.StrictEpochGraceBlocks + 1
+	if err := v.validateEpochParameters(h); err == nil {
+		t.Fatal("expected previous-epoch params to be rejected outside grace window")
+	}
+}
+
 func TestSharedCacheKeyIgnoresAllocatorName(t *testing.T) {
 	chainCfg, genesisCfg := testConfig(t)
 	v, err := NewValidator(chainCfg, CPUBackend{}, 1)
