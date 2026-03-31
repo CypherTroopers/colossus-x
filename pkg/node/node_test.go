@@ -12,7 +12,7 @@ import (
 )
 
 func TestNodeUsesSelectedMiningConfiguration(t *testing.T) {
-	spec := cx.StrictSpecWithGrowth(1024*1024, cx.DefaultDAGGrowthBytesPerEpoch)
+	spec := cx.ColossusXSpecWithGrowth(1024*1024, cx.DefaultDAGGrowthBytesPerEpoch)
 	target, err := cx.ParseTargetHex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 	if err != nil {
 		t.Fatal(err)

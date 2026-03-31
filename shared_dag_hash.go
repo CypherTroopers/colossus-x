@@ -45,7 +45,7 @@ func (k *hostReferenceSharedDAGKernel) HashBatchShared(header []byte, startNonce
 
 func latticeHashSharedBuffer(spec Spec, header []byte, nonce cx.Nonce, dag rawContiguousDAGBuffer) HashResult {
 	if spec.AlgorithmVersion >= 2 {
-		return cx.StrictV2Hash(spec, header, nonce, rawDAGAccessor{dag: dag})
+		return cx.ColossusXHash(spec, header, nonce, rawDAGAccessor{dag: dag})
 	}
 	var out HashResult
 	if dag.NodeCount == 0 || dag.NodeSize == 0 || dag.ByteLen == 0 {

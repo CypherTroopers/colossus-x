@@ -17,7 +17,7 @@ func (a sliceAccessor) ReadNode(i uint64, out []byte) {
 }
 
 func testSpec() Spec {
-	return StrictSpecWithGrowth(64*16, DefaultDAGGrowthBytesPerEpoch)
+	return ColossusXSpecWithGrowth(64*16, DefaultDAGGrowthBytesPerEpoch)
 }
 
 func TestGenerateDAGDeterministic(t *testing.T) {
@@ -100,31 +100,31 @@ func TestLessOrEqualBETargetComparison(t *testing.T) {
 	}
 }
 
-func TestStrictModeDynamicDAGProfile(t *testing.T) {
-	strict := StrictSpec()
-	if err := strict.Validate(); err != nil {
-		t.Fatalf("StrictSpec should validate: %v", err)
+func TestColossusXModeDynamicDAGProfile(t *testing.T) {
+	colossusx := ColossusXSpec()
+	if err := colossusx.Validate(); err != nil {
+		t.Fatalf("ColossusXSpec should validate: %v", err)
 	}
-	if strict.InitialDAGSizeBytes != 80*1024*1024*1024 {
-		t.Fatalf("expected strict initial DAG size 80GiB, got %d", strict.InitialDAGSizeBytes)
+	if colossusx.InitialDAGSizeBytes != 80*1024*1024*1024 {
+		t.Fatalf("expected colossusx initial DAG size 80GiB, got %d", colossusx.InitialDAGSizeBytes)
 	}
-	if strict.DAGGrowthBytesPerEpoch != 256*1024*1024 {
-		t.Fatalf("expected strict DAG growth 256MiB, got %d", strict.DAGGrowthBytesPerEpoch)
+	if colossusx.DAGGrowthBytesPerEpoch != 256*1024*1024 {
+		t.Fatalf("expected colossusx DAG growth 256MiB, got %d", colossusx.DAGGrowthBytesPerEpoch)
 	}
-	if strict.DAGSizeForHeight(strict.EpochBlocks) <= strict.DAGSizeForHeight(0) {
-		t.Fatal("expected strict DAG size to grow after an epoch")
+	if colossusx.DAGSizeForHeight(colossusx.EpochBlocks) <= colossusx.DAGSizeForHeight(0) {
+		t.Fatal("expected colossusx DAG size to grow after an epoch")
 	}
 }
 
-func TestGenerateDAGUsesStrictV2NodeGeneration(t *testing.T) {
+func TestGenerateDAGUsesColossusXV2NodeGeneration(t *testing.T) {
 	spec := testSpec()
 	seed := []byte("0123456789abcdef0123456789abcdef")
 	dag := make([]byte, spec.DAGSizeBytes)
 	if err := GenerateDAG(spec, dag, seed, 1); err != nil {
 		t.Fatalf("GenerateDAG: %v", err)
 	}
-	cache := buildStrictV2SeedCache(seed, strictV2CacheEntriesForSpec(spec))
-	want := strictV2Node(0, spec.NodeSize, cache)
+	cache := buildColossusXV2SeedCache(seed, colossusXCacheEntriesForSpec(spec))
+	want := colossusXNode(0, spec.NodeSize, cache)
 	if got := dag[:spec.NodeSize]; !bytes.Equal(got, want) {
 		t.Fatalf("node 0 mismatch: got=%x want=%x", got, want)
 	}
@@ -150,10 +150,10 @@ func TestBlake3RoundInputIncludesMixAndNode(t *testing.T) {
 	}
 }
 
-func TestStrictV2AuditIndicesCountAndBounds(t *testing.T) {
+func TestColossusXAuditIndicesCountAndBounds(t *testing.T) {
 	pow := [32]byte{1, 2, 3, 4}
-	indices := StrictV2AuditIndices(pow, 17, StrictAuditCellCount)
-	if len(indices) != int(StrictAuditCellCount) {
+	indices := ColossusXAuditIndices(pow, 17, ColossusXAuditCellCount)
+	if len(indices) != int(ColossusXAuditCellCount) {
 		t.Fatalf("unexpected audit index count: %d", len(indices))
 	}
 	for i, idx := range indices {

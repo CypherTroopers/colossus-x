@@ -17,8 +17,8 @@ func NewStatelessDAG(spec Spec, epochSeed []byte) (*StatelessDAG, error) {
 	if len(epochSeed) == 0 {
 		return nil, errors.New("epoch seed cannot be empty")
 	}
-	if spec.Mode == ModeStrict {
-		return nil, errors.New("stateless dag is disabled for strict mode in production profile")
+	if spec.Mode == ModeColossusX {
+		return nil, errors.New("stateless dag is disabled for colossusx mode in production profile")
 	}
 	seed := append([]byte(nil), epochSeed...)
 	return &StatelessDAG{spec: spec, epochSeed: seed}, nil
@@ -75,8 +75,8 @@ func (d *StatelessDAG) generatedNode(i uint64) []byte {
 }
 
 func HashHeaderStateless(spec Spec, header []byte, nonce Nonce, epochSeed []byte) (HashResult, error) {
-	if spec.Mode == ModeStrict || spec.AlgorithmVersion >= 2 {
-		return HashResult{}, errors.New("stateless strict verification is disabled; use merkle-backed strict solution verification")
+	if spec.Mode == ModeColossusX || spec.AlgorithmVersion >= 2 {
+		return HashResult{}, errors.New("stateless colossusx verification is disabled; use merkle-backed colossusx solution verification")
 	}
 	dag, err := NewStatelessDAG(spec, epochSeed)
 	if err != nil {

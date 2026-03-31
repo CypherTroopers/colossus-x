@@ -7,8 +7,8 @@ import (
 	cx "colossusx/colossusx"
 )
 
-func ValidateStrictProductionConfig(mode cx.Mode, backend BackendMode, dagAlloc string) error {
-	if mode != "" && mode != cx.ModeStrict {
+func ValidateColossusXProductionConfig(mode cx.Mode, backend BackendMode, dagAlloc string) error {
+	if mode != "" && mode != cx.ModeColossusX {
 		return nil
 	}
 	alloc := strings.ToLower(strings.TrimSpace(dagAlloc))
@@ -18,12 +18,12 @@ func ValidateStrictProductionConfig(mode cx.Mode, backend BackendMode, dagAlloc 
 	switch backend {
 	case BackendCPU, BackendUnified, BackendGPU, BackendCUDA, BackendOpenCL, BackendMetal:
 	default:
-		return fmt.Errorf("unsupported strict backend %q", backend)
+		return fmt.Errorf("unsupported colossusx backend %q", backend)
 	}
 	switch alloc {
 	case "auto", "go-heap", "pinned-host", "cuda-managed", "opencl-svm", "metal-shared":
 	default:
-		return fmt.Errorf("strict production disallows dag allocator %q (allowed: auto, go-heap, pinned-host, cuda-managed, opencl-svm, metal-shared)", dagAlloc)
+		return fmt.Errorf("colossusx production disallows dag allocator %q (allowed: auto, go-heap, pinned-host, cuda-managed, opencl-svm, metal-shared)", dagAlloc)
 	}
 	switch backend {
 	case BackendCPU:
@@ -44,7 +44,7 @@ func ValidateStrictProductionConfig(mode cx.Mode, backend BackendMode, dagAlloc 
 		}
 	case BackendUnified:
 		if alloc != "auto" {
-			return fmt.Errorf("unified backend requires auto dag allocator in strict production")
+			return fmt.Errorf("unified backend requires auto dag allocator in colossusx production")
 		}
 	}
 	return nil

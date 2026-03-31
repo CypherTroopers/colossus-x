@@ -158,9 +158,9 @@ func runDaemon(args []string) error {
 
 func parseDaemonFlags(args []string) (daemonConfig, error) {
 	fs := flag.NewFlagSet("colossusx daemon", flag.ContinueOnError)
-	modeName := fs.String("mode", string(cx.ModeStrict), "chain mode (strict only)")
+	modeName := fs.String("mode", string(cx.ModeColossusX), "chain mode (colossusx only)")
 	networkID := fs.String("network", "devnet", "network identifier")
-	initialDAGMiB := fs.Uint64("initial-dag-mib", cx.StrictInitialDAGSizeBytes/(1024*1024), "initial DAG size in MiB")
+	initialDAGMiB := fs.Uint64("initial-dag-mib", cx.ColossusXInitialDAGSizeBytes/(1024*1024), "initial DAG size in MiB")
 	dagMiB := fs.Uint64("dag-mib", 0, "deprecated alias for -initial-dag-mib")
 	dagGrowthMiB := fs.Uint64("dag-growth-mib-per-epoch", cx.DefaultDAGGrowthBytesPerEpoch/(1024*1024), "DAG growth per epoch in MiB")
 	mine := fs.Bool("mine", true, "enable local mining loop")
@@ -187,9 +187,9 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 	mode := cx.Mode(*modeName)
 	var spec cx.Spec
 	switch mode {
-	case cx.ModeStrict:
-		spec = cx.StrictSpec()
-		if *initialDAGMiB != cx.StrictInitialDAGSizeBytes/(1024*1024) {
+	case cx.ModeColossusX:
+		spec = cx.ColossusXSpec()
+		if *initialDAGMiB != cx.ColossusXInitialDAGSizeBytes/(1024*1024) {
 			spec.InitialDAGSizeBytes = (*initialDAGMiB) * 1024 * 1024
 			spec.DAGSizeBytes = spec.InitialDAGSizeBytes
 		}
@@ -206,7 +206,7 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 	if err != nil {
 		return daemonConfig{}, err
 	}
-	if err := miner.ValidateStrictProductionConfig(mode, backendMode, *minerDAGAlloc); err != nil {
+	if err := miner.ValidateColossusXProductionConfig(mode, backendMode, *minerDAGAlloc); err != nil {
 		return daemonConfig{}, err
 	}
 	target, err := cx.ParseTargetHex(*targetHex)
@@ -250,10 +250,10 @@ func initializeMining(cfg daemonConfig) (cx.HashBackend, miner.MemoryStrategy, s
 
 func runVerify(args []string) error {
 	fs := flag.NewFlagSet("colossusx verify", flag.ContinueOnError)
-	modeName := fs.String("mode", string(cx.ModeStrict), "verification mode (strict only)")
+	modeName := fs.String("mode", string(cx.ModeColossusX), "verification mode (colossusx only)")
 	headerPath := fs.String("header", "", "path to a JSON-encoded types.BlockHeader")
 	blockPath := fs.String("block", "", "path to a JSON-encoded types.Block")
-	initialDAGMiB := fs.Uint64("initial-dag-mib", cx.StrictInitialDAGSizeBytes/(1024*1024), "initial DAG size in MiB")
+	initialDAGMiB := fs.Uint64("initial-dag-mib", cx.ColossusXInitialDAGSizeBytes/(1024*1024), "initial DAG size in MiB")
 	dagMiB := fs.Uint64("dag-mib", 0, "deprecated alias for -initial-dag-mib")
 	dagGrowthMiB := fs.Uint64("dag-growth-mib-per-epoch", cx.DefaultDAGGrowthBytesPerEpoch/(1024*1024), "DAG growth per epoch in MiB")
 	if err := fs.Parse(args); err != nil {
@@ -327,8 +327,8 @@ func readJSONFile(path string, out any) error {
 func specFromHeader(mode cx.Mode, header types.BlockHeader, initialDAGBytes, growthBytes uint64) (cx.Spec, error) {
 	var spec cx.Spec
 	switch mode {
-	case cx.ModeStrict:
-		spec = cx.StrictSpec()
+	case cx.ModeColossusX:
+		spec = cx.ColossusXSpec()
 		if initialDAGBytes != 0 {
 			spec.InitialDAGSizeBytes = initialDAGBytes
 			spec.DAGSizeBytes = initialDAGBytes

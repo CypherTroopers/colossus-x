@@ -10,40 +10,40 @@ import (
 )
 
 const (
-	strictV2SeedCacheBytes   = 512 * 1024 * 1024
-	strictV2SeedCacheEntry   = 64
-	strictV2MinCacheEntries  = 1024
-	strictV2SeedCachePasses  = 3
-	strictV2CellCacheLookups = 256
+	colossusXSeedCacheBytes   = 512 * 1024 * 1024
+	colossusXSeedCacheEntry   = 64
+	colossusXMinCacheEntries  = 1024
+	colossusXSeedCachePasses  = 3
+	colossusXCellCacheLookups = 256
 )
 
-func strictV2CacheEntriesForSpec(spec Spec) int {
-	bytes := uint64(strictV2SeedCacheBytes)
-	// Keep production strict profile at the full 512 MiB cache, while allowing
+func colossusXCacheEntriesForSpec(spec Spec) int {
+	bytes := uint64(colossusXSeedCacheBytes)
+	// Keep production colossusx profile at the full 512 MiB cache, while allowing
 	// smaller deterministic fixtures used by tests and simulations to scale down.
-	if initial := spec.initialDAGSize(); initial > 0 && initial < StrictInitialDAGSizeBytes {
+	if initial := spec.initialDAGSize(); initial > 0 && initial < ColossusXInitialDAGSizeBytes {
 		scaled := initial / 160 // preserve 512 MiB : 80 GiB ratio
-		minBytes := uint64(strictV2MinCacheEntries * strictV2SeedCacheEntry)
+		minBytes := uint64(colossusXMinCacheEntries * colossusXSeedCacheEntry)
 		if scaled < minBytes {
 			scaled = minBytes
 		}
 		bytes = scaled
 	}
-	entries := int(bytes / strictV2SeedCacheEntry)
-	if entries < strictV2MinCacheEntries {
-		return strictV2MinCacheEntries
+	entries := int(bytes / colossusXSeedCacheEntry)
+	if entries < colossusXMinCacheEntries {
+		return colossusXMinCacheEntries
 	}
 	return entries
 }
 
-func buildStrictV2SeedCache(seed []byte, entries int) [][64]byte {
+func buildColossusXV2SeedCache(seed []byte, entries int) [][64]byte {
 	cache := make([][64]byte, entries)
 	s := sha3.Sum256(seed)
 	cache[0] = sha3.Sum512(s[:])
 	for i := 1; i < entries; i++ {
 		cache[i] = sha3.Sum512(cache[i-1][:])
 	}
-	for pass := 0; pass < strictV2SeedCachePasses; pass++ {
+	for pass := 0; pass < colossusXSeedCachePasses; pass++ {
 		for i := 0; i < entries; i++ {
 			target := binary.LittleEndian.Uint32(cache[i][:4]) % uint32(entries)
 			var x [64]byte
@@ -56,7 +56,7 @@ func buildStrictV2SeedCache(seed []byte, entries int) [][64]byte {
 	return cache
 }
 
-func strictV2Node(index uint64, nodeSize uint64, cache [][64]byte) []byte {
+func colossusXNode(index uint64, nodeSize uint64, cache [][64]byte) []byte {
 	seed := cache[index%uint64(len(cache))]
 	var idx [8]byte
 	binary.LittleEndian.PutUint64(idx[:], index)
@@ -66,7 +66,7 @@ func strictV2Node(index uint64, nodeSize uint64, cache [][64]byte) []byte {
 		initialIn[i] ^= idx[i]
 	}
 	mix := sha3.Sum512(initialIn[:])
-	for j := uint32(0); j < strictV2CellCacheLookups; j++ {
+	for j := uint32(0); j < colossusXCellCacheLookups; j++ {
 		mi := mix[j%64]
 		cacheIndex := fnv1a32(uint32(index)^j, uint32(mi)) % uint32(len(cache))
 		var x [64]byte
@@ -83,8 +83,8 @@ func strictV2Node(index uint64, nodeSize uint64, cache [][64]byte) []byte {
 	return out
 }
 
-func generateStrictV2DAG(spec Spec, dag []byte, epochSeed []byte, workers int, done func()) {
-	cache := buildStrictV2SeedCache(epochSeed, strictV2CacheEntriesForSpec(spec))
+func generateColossusXV2DAG(spec Spec, dag []byte, epochSeed []byte, workers int, done func()) {
+	cache := buildColossusXV2SeedCache(epochSeed, colossusXCacheEntriesForSpec(spec))
 	if workers <= 0 {
 		workers = runtime.NumCPU()
 	}
@@ -108,7 +108,7 @@ func generateStrictV2DAG(spec Spec, dag []byte, epochSeed []byte, workers int, d
 			defer wg.Done()
 			for i := from; i < to; i++ {
 				off := i * spec.NodeSize
-				copy(dag[off:off+spec.NodeSize], strictV2Node(i, spec.NodeSize, cache))
+				copy(dag[off:off+spec.NodeSize], colossusXNode(i, spec.NodeSize, cache))
 				if done != nil {
 					done()
 				}

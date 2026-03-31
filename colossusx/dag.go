@@ -120,8 +120,8 @@ func generateDAG(spec Spec, dag []byte, epochSeed []byte, workers int, done *ato
 	}
 
 	nodeCount := spec.NodeCount()
-	if spec.Mode == ModeStrict {
-		generateStrictV2DAG(spec, dag, epochSeed, workers, func() {
+	if spec.Mode == ModeColossusX {
+		generateColossusXV2DAG(spec, dag, epochSeed, workers, func() {
 			if done != nil {
 				done.Add(1)
 			}

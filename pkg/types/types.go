@@ -30,10 +30,10 @@ type BlockHeader struct {
 }
 
 type Block struct {
-	Header                BlockHeader               `json:"header"`
-	Transactions          []string                  `json:"transactions,omitempty"`
-	StrictSolution        *cx.StrictSolution        `json:"strict_solution,omitempty"`
-	StrictSolutionCompact *cx.StrictSolutionCompact `json:"strict_solution_compact,omitempty"`
+	Header                   BlockHeader                  `json:"header"`
+	Transactions             []string                     `json:"transactions,omitempty"`
+	ColossusXSolution        *cx.ColossusXSolution        `json:"colossusx_solution,omitempty"`
+	ColossusXSolutionCompact *cx.ColossusXSolutionCompact `json:"colossusx_solution_compact,omitempty"`
 }
 
 type GenesisConfig struct {

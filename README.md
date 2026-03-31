@@ -61,7 +61,7 @@ make build
 
 ```bash
 go run ./cmd/colossusx daemon \
-  -mode strict \
+  -mode colossusx \
   -network mainnet \
   -datadir ./data \
   -listen :30333 \
@@ -76,10 +76,10 @@ go run ./cmd/colossusx daemon \
 ビルド済みバイナリ利用例:
 
 ```bash
-./bin/colossusx daemon -mode strict -network mainnet -datadir ./data -listen :30333
+./bin/colossusx daemon -mode colossusx -network mainnet -datadir ./data -listen :30333
 ```
 
-> 注: `mode` は現状 `strict` のみサポートです。
+> 注: `mode` は現状 `colossusx` のみサポートです。
 
 ---
 
@@ -94,7 +94,7 @@ Colossus-X は **単一バイナリに複数入口を持つ後者寄り構成**�
 
 ```bash
 go run ./cmd/colossusx mine \
-  -mode strict \
+  -mode colossusx \
   -backend opencl \
   -dag-alloc auto \
   -workers 16 \
@@ -105,7 +105,7 @@ go run ./cmd/colossusx mine \
 
 ```bash
 go run ./cmd/colossusx mine \
-  -mode strict \
+  -mode colossusx \
   -backend opencl \
   -dag-alloc auto \
   -initial-dag-mib 1024 \
@@ -125,7 +125,7 @@ go run ./cmd/colossusx mine \
 
 ```bash
 go run ./cmd/colossusx daemon \
-  -mode strict \
+  -mode colossusx \
   -network mainnet \
   -datadir ./data \
   -listen :30333
@@ -135,7 +135,7 @@ go run ./cmd/colossusx daemon \
 
 ```bash
 go run ./cmd/colossusx daemon \
-  -mode strict \
+  -mode colossusx \
   -network mainnet \
   -initial-dag-mib 1024 \
   -dag-growth-mib-per-epoch 8 \
@@ -157,7 +157,7 @@ go run ./cmd/colossusx daemon \
 
 ```bash
 go run ./cmd/colossusx daemon \
-  -mode strict \
+  -mode colossusx \
   -network mainnet \
   -initial-dag-mib 1024 \
   -dag-growth-mib-per-epoch 8 \
@@ -181,7 +181,7 @@ go run ./cmd/colossusx daemon \
 
 ```bash
 go run ./cmd/colossusx verify \
-  -mode strict \
+  -mode colossusx \
   -header ./examples/header.json \
   -initial-dag-mib 1024 \
   -dag-growth-mib-per-epoch 8
@@ -191,7 +191,7 @@ go run ./cmd/colossusx verify \
 
 ```bash
 go run ./cmd/colossusx verify \
-  -mode strict \
+  -mode colossusx \
   -block ./examples/block.json \
   -initial-dag-mib 1024 \
   -dag-growth-mib-per-epoch 8
@@ -207,7 +207,7 @@ go run ./cmd/colossusx verify \
 
 | フラグ | デフォルト | 説明 |
 |---|---:|---|
-| `-mode` | `strict` | チェーンモード。現状 strict のみ。 |
+| `-mode` | `colossusx` | チェーンモード。現状 colossusx のみ。 |
 | `-network` | `devnet` | ネットワーク識別子（チェーンID相当）。 |
 | `-initial-dag-mib` | `1024` | 初期 DAG サイズ (MiB)。 |
 | `-dag-mib` | `0` | `-initial-dag-mib` の非推奨エイリアス。0 以外なら上書き。 |
@@ -226,13 +226,13 @@ go run ./cmd/colossusx verify \
 | `-miner-backend` | `opencl` | `cuda/opencl/metal/cpu/unified/gpu`。 |
 | `-miner-dag-alloc` | `auto` | `auto/go-heap/pinned-host/cuda-managed/opencl-svm/metal-shared`。 |
 
-`strict` 本番相当では `backend` と `dag-alloc` の組み合わせに制約があります（無効組み合わせはエラー）。
+`colossusx` 本番相当では `backend` と `dag-alloc` の組み合わせに制約があります（無効組み合わせはエラー）。
 
 ## 3-2. `mine` フラグ（デフォルトコマンド）
 
 | フラグ | デフォルト | 説明 |
 |---|---:|---|
-| `-mode` | `strict` | 動作モード（strict のみ）。 |
+| `-mode` | `colossusx` | 動作モード（colossusx のみ）。 |
 | `-backend` | `opencl` | `cuda/opencl/metal/cpu/unified/gpu`。 |
 | `-dag-alloc` | `auto` | DAG アロケーション戦略。 |
 | `-initial-dag-mib` | `1024` | 初期 DAG サイズ (MiB)。 |
@@ -250,7 +250,7 @@ go run ./cmd/colossusx verify \
 
 | フラグ | デフォルト | 説明 |
 |---|---:|---|
-| `-mode` | `strict` | 検証モード（strict のみ）。 |
+| `-mode` | `colossusx` | 検証モード（colossusx のみ）。 |
 | `-header` | `""` | `types.BlockHeader` JSON パス。 |
 | `-block` | `""` | `types.Block` JSON パス。 |
 | `-initial-dag-mib` | `1024` | DAG 初期サイズ。 |
@@ -272,7 +272,7 @@ go run ./cmd/colossusx verify \
   - `cuda` ビルドタグ有効時の CUDA 実装を利用。
   - `cgo && cuda` パスでは `-lcudart` リンク。
 - `metal`
-  - Metal 用バックエンド。strict では `metal-shared` DAG 要求。
+  - Metal 用バックエンド。colossusx では `metal-shared` DAG 要求。
 - `unified`, `cpu`
   - CPU / 共有メモリ寄りのパス。
 
@@ -329,4 +329,4 @@ make mine-easy
 ## 6. 運用メモ
 
 - 本番運用前に `daemon` 起動で `runtime_init` / `execution` 表示を確認し、期待したバックエンドで動作しているか検証してください。
-- strict モードは不正な DAG 戦略組み合わせを拒否するため、`-miner-backend` と `-miner-dag-alloc` を必ず整合させてください。
+- colossusx モードは不正な DAG 戦略組み合わせを拒否するため、`-miner-backend` と `-miner-dag-alloc` を必ず整合させてください。

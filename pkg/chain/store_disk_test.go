@@ -23,7 +23,7 @@ func TestDiskStorePersistsBlocksAndTip(t *testing.T) {
 		Message:   "genesis",
 		Timestamp: 1,
 		Bits:      target,
-		Spec:      cx.StrictSpecWithGrowth(8*1024*1024, cx.DefaultDAGGrowthBytesPerEpoch),
+		Spec:      cx.ColossusXSpecWithGrowth(8*1024*1024, cx.DefaultDAGGrowthBytesPerEpoch),
 	})
 	work := big.NewInt(123)
 	if err := store.StoreBlock(block, work); err != nil {
