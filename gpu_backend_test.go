@@ -174,7 +174,7 @@ func TestSuccessfulGPURunAvoidsNormalFallback(t *testing.T) {
 	}
 }
 
-func TestOpenCLDispatcherSVMFallsBackToSharedHostReference(t *testing.T) {
+func TestOpenCLDispatcherSVMRejectsHostFallbackInStrictMode(t *testing.T) {
 	dag := testResearchDAG(t)
 	defer dag.Close()
 	runtime := &fakeOpenCLRuntime{available: true, svm: true}
@@ -185,28 +185,10 @@ func TestOpenCLDispatcherSVMFallsBackToSharedHostReference(t *testing.T) {
 		t.Fatalf("Prepare: %v", err)
 	}
 	result, err := dispatcher.Dispatch([]byte("header"), cx.NewUint64Nonce(10), 3, dag)
-	if err != nil {
-		t.Fatalf("Dispatch: %v", err)
-	}
-	if len(result.Hashes) != 3 {
-		t.Fatalf("expected 3 hashes, got %d", len(result.Hashes))
+	if err == nil {
+		t.Fatal("expected strict mode to reject host-reference fallback when device dispatch does not run")
 	}
 	plan := result.Plan
-	if !plan.UsedFallback {
-		t.Fatal("expected SVM-capable runtime without a successful device kernel dispatch to fall back to shared-host validation")
-	}
-	if plan.ExecutionPath != GPUExecutionPathHostReference {
-		t.Fatalf("expected host-reference execution path for the Go shared-buffer validator, got %q", plan.ExecutionPath)
-	}
-	if plan.ExecutionBackend != "shared-host" {
-		t.Fatalf("expected shared-host execution backend, got %q", plan.ExecutionBackend)
-	}
-	if plan.DeviceDispatchAttempted {
-		t.Fatal("expected Go shared-buffer validator to avoid reporting a device dispatch")
-	}
-	if plan.CopiedDAG || plan.DeviceDAGCopyPerformed {
-		t.Fatalf("expected no device DAG copy, got CopiedDAG=%v DeviceDAGCopyPerformed=%v", plan.CopiedDAG, plan.DeviceDAGCopyPerformed)
-	}
 	if !plan.SVMEnabled {
 		t.Fatal("expected SVM metadata to reflect runtime capability")
 	}
@@ -274,7 +256,7 @@ func TestOpenCLDispatcherReportsDeviceKernelOnlyAfterSuccessfulDeviceDispatch(t 
 	}
 }
 
-func TestOpenCLDispatcherFallsBackToSharedHostWhenDeviceKernelFails(t *testing.T) {
+func TestOpenCLDispatcherRejectsFallbackWhenDeviceKernelFailsInStrictMode(t *testing.T) {
 	dag := testResearchDAG(t)
 	defer dag.Close()
 	runtime := &fakeOpenCLRuntime{available: true, svm: true}
@@ -283,25 +265,9 @@ func TestOpenCLDispatcherFallsBackToSharedHostWhenDeviceKernelFails(t *testing.T
 	if err := dispatcher.Prepare(dag, cfg); err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
-	result, err := dispatcher.Dispatch([]byte("header"), cx.NewUint64Nonce(10), 3, dag)
-	if err != nil {
-		t.Fatalf("Dispatch: %v", err)
-	}
-	if len(result.Hashes) != 3 {
-		t.Fatalf("expected 3 hashes, got %d", len(result.Hashes))
-	}
-	plan := result.Plan
-	if !plan.UsedFallback {
-		t.Fatal("expected failed device-kernel launch to fall back to shared-host execution")
-	}
-	if plan.ExecutionPath != GPUExecutionPathHostReference {
-		t.Fatalf("expected host-reference execution path after device-kernel failure, got %q", plan.ExecutionPath)
-	}
-	if plan.ExecutionBackend != "shared-host" {
-		t.Fatalf("expected shared-host execution backend after device-kernel failure, got %q", plan.ExecutionBackend)
-	}
-	if plan.DeviceDispatchAttempted {
-		t.Fatal("expected failed device-kernel launch to avoid claiming a successful device dispatch")
+	_, err := dispatcher.Dispatch([]byte("header"), cx.NewUint64Nonce(10), 3, dag)
+	if err == nil {
+		t.Fatal("expected strict mode to reject host fallback after device-kernel failure")
 	}
 }
 
@@ -324,7 +290,7 @@ func TestGPUBackendPrepareFailsHardWhenRuntimeUnavailable(t *testing.T) {
 	}
 }
 
-func TestOpenCLDispatcherFallsBackToHostReferenceWithoutSVM(t *testing.T) {
+func TestOpenCLDispatcherRejectsHostFallbackWithoutSVMInStrictMode(t *testing.T) {
 	dag := testResearchDAG(t)
 	defer dag.Close()
 	runtime := &fakeOpenCLRuntime{available: true, svm: false}
@@ -335,24 +301,12 @@ func TestOpenCLDispatcherFallsBackToHostReferenceWithoutSVM(t *testing.T) {
 		t.Fatalf("Prepare: %v", err)
 	}
 	result, err := dispatcher.Dispatch([]byte("header"), cx.NewUint64Nonce(10), 3, dag)
-	if err != nil {
-		t.Fatalf("Dispatch: %v", err)
-	}
-	if len(result.Hashes) != 3 {
-		t.Fatalf("expected 3 hashes, got %d", len(result.Hashes))
+	if err == nil {
+		t.Fatal("expected strict mode to reject host-reference fallback when SVM is unavailable")
 	}
 	plan := result.Plan
-	if !plan.UsedFallback {
-		t.Fatal("expected non-SVM dispatch to remain on host-reference fallback")
-	}
-	if plan.ExecutionPath != GPUExecutionPathHostReference {
-		t.Fatalf("expected host-reference execution path, got %q", plan.ExecutionPath)
-	}
-	if plan.ExecutionBackend != "shared-host" {
-		t.Fatalf("expected shared-host execution backend, got %q", plan.ExecutionBackend)
-	}
 	if plan.CopiedDAG || plan.DeviceDAGCopyPerformed {
-		t.Fatalf("expected no DAG copy on host-reference validation path, got CopiedDAG=%v DeviceDAGCopyPerformed=%v", plan.CopiedDAG, plan.DeviceDAGCopyPerformed)
+		t.Fatalf("expected no DAG copy on rejected host-reference path, got CopiedDAG=%v DeviceDAGCopyPerformed=%v", plan.CopiedDAG, plan.DeviceDAGCopyPerformed)
 	}
 	if sharedKernel.calls != 0 {
 		t.Fatalf("expected shared kernel to stay unused without SVM, got %d calls", sharedKernel.calls)
