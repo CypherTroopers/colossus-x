@@ -42,8 +42,8 @@ go build -o bin/colossusx .
 Using `make`:
 
 ```bash
-make deps
-make build
+make SKY
+make colossusx
 ```
 
 ### 1-4. Executables and entry points
