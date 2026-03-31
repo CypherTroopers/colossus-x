@@ -21,14 +21,12 @@ func main() {
 
 func run(args []string) error {
 	fs := flag.NewFlagSet("colossusxverify", flag.ContinueOnError)
-	modeName := fs.String("mode", string(cx.ModeResearch), "verification mode: strict or research")
+	modeName := fs.String("mode", string(cx.ModeStrict), "verification mode (strict only)")
 	headerPath := fs.String("header", "", "path to a JSON-encoded types.BlockHeader")
 	blockPath := fs.String("block", "", "path to a JSON-encoded types.Block")
 	initialDAGMiB := fs.Uint64("initial-dag-mib", cx.StrictInitialDAGSizeBytes/(1024*1024), "initial DAG size in MiB")
 	dagMiB := fs.Uint64("dag-mib", 0, "deprecated alias for -initial-dag-mib")
 	dagGrowthMiB := fs.Uint64("dag-growth-mib-per-epoch", cx.DefaultDAGGrowthBytesPerEpoch/(1024*1024), "DAG growth per epoch in MiB")
-	reads := fs.Uint64("reads", 32, "reads/hash for research-mode verification")
-	epochBlocks := fs.Uint64("epoch-blocks", 32, "epoch length for research-mode verification")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -40,7 +38,7 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	spec, err := specFromHeader(cx.Mode(*modeName), header, (*initialDAGMiB)*1024*1024, (*dagGrowthMiB)*1024*1024, *reads, *epochBlocks)
+	spec, err := specFromHeader(cx.Mode(*modeName), header, (*initialDAGMiB)*1024*1024, (*dagGrowthMiB)*1024*1024)
 	if err != nil {
 		return err
 	}
@@ -97,7 +95,7 @@ func readJSONFile(path string, out any) error {
 	return nil
 }
 
-func specFromHeader(mode cx.Mode, header types.BlockHeader, initialDAGBytes, growthBytes, reads, epochBlocks uint64) (cx.Spec, error) {
+func specFromHeader(mode cx.Mode, header types.BlockHeader, initialDAGBytes, growthBytes uint64) (cx.Spec, error) {
 	var spec cx.Spec
 	switch mode {
 	case cx.ModeStrict:
@@ -109,8 +107,6 @@ func specFromHeader(mode cx.Mode, header types.BlockHeader, initialDAGBytes, gro
 		if growthBytes != 0 {
 			spec.DAGGrowthBytesPerEpoch = growthBytes
 		}
-	case cx.ModeResearch:
-		spec = cx.ResearchSpecWithGrowth(initialDAGBytes, growthBytes, reads, epochBlocks)
 	default:
 		return cx.Spec{}, fmt.Errorf("unsupported mode %q", mode)
 	}

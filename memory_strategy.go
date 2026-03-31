@@ -127,7 +127,7 @@ func (e notImplementedError) Error() string { return "not implemented: " + strin
 func ErrNotImplemented(s string) error      { return notImplementedError(s) }
 
 func ResolveDAGStrategy(backend BackendMode, runtime runtimeState, dagAlloc string) (MemoryStrategy, error) {
-	return ResolveDAGStrategyForMode(cx.ModeResearch, backend, runtime, dagAlloc)
+	return ResolveDAGStrategyForMode(cx.ModeStrict, backend, runtime, dagAlloc)
 }
 func ResolveDAGStrategyForMode(mode cx.Mode, backend BackendMode, runtime runtimeState, dagAlloc string) (MemoryStrategy, error) {
 	return dagStrategyResolver{mode: mode, backend: backend, runtime: runtime}.Resolve(dagAlloc)
@@ -140,43 +140,21 @@ func (r dagStrategyResolver) Resolve(dagAlloc string) (MemoryStrategy, error) {
 	if choice == "" {
 		choice = "auto"
 	}
-	if r.mode == cx.ModeStrict {
+	if r.mode == "" || r.mode == cx.ModeStrict {
 		return r.resolveStrict(choice)
 	}
-	return r.resolveResearch(choice)
+	return nil, fmt.Errorf("unsupported mode %q", r.mode)
 }
-func (r dagStrategyResolver) resolveResearch(choice string) (MemoryStrategy, error) {
+func (r dagStrategyResolver) resolveStrict(choice string) (MemoryStrategy, error) {
 	if choice == "auto" {
-		return fallbackMemoryStrategy{name: "auto", strategies: r.autoResearchStrategies()}, nil
+		s := r.autoStrictStrategies()
+		return fallbackMemoryStrategy{name: "auto", strategies: s}, nil
 	}
 	switch choice {
 	case "go", "go-heap":
 		return GoHeapMemory{}, nil
 	case "pinned", "pinned-host":
 		return PinnedMemory{}, nil
-	case "cuda", "cuda-managed":
-		if o, ok := r.cudaDeviceOrdinal(); ok {
-			return CUDAManagedMemory{DeviceOrdinal: o, Ready: true}, nil
-		}
-		return nil, fmt.Errorf("cuda managed allocation requires initialized runtime/device")
-	case "opencl", "opencl-svm", "svm":
-		if c, ok := r.openclContext(); ok {
-			return OpenCLSVM{Context: c}, nil
-		}
-		return nil, fmt.Errorf("opencl svm requires a live OpenCL context and device")
-	default:
-		return nil, fmt.Errorf("unsupported dag allocation strategy %q", choice)
-	}
-}
-func (r dagStrategyResolver) resolveStrict(choice string) (MemoryStrategy, error) {
-	if choice == "auto" {
-		s := r.autoStrictStrategies()
-		if len(s) == 0 {
-			return nil, fmt.Errorf("strict mode requires a unified/shared DAG allocator")
-		}
-		return fallbackMemoryStrategy{name: "auto", strategies: s}, nil
-	}
-	switch choice {
 	case "cuda-managed":
 		if o, ok := r.cudaDeviceOrdinal(); ok {
 			return CUDAManagedMemory{DeviceOrdinal: o, Ready: true}, nil
@@ -190,15 +168,10 @@ func (r dagStrategyResolver) resolveStrict(choice string) (MemoryStrategy, error
 			return MetalSharedMemory{Context: c}, nil
 		}
 	}
-	return nil, fmt.Errorf("strict mode requires one of: auto, cuda-managed, opencl-svm, metal-shared")
-}
-func (r dagStrategyResolver) autoResearchStrategies() []MemoryStrategy {
-	out := r.autoStrictStrategies()
-	out = append(out, GoHeapMemory{})
-	return out
+	return nil, fmt.Errorf("strict mode requires one of: auto, go-heap, pinned-host, cuda-managed, opencl-svm, metal-shared")
 }
 func (r dagStrategyResolver) autoStrictStrategies() []MemoryStrategy {
-	strategies := make([]MemoryStrategy, 0, 3)
+	strategies := make([]MemoryStrategy, 0, 4)
 	if o, ok := r.cudaDeviceOrdinal(); ok {
 		strategies = append(strategies, CUDAManagedMemory{DeviceOrdinal: o, Ready: true})
 	}
@@ -208,6 +181,7 @@ func (r dagStrategyResolver) autoStrictStrategies() []MemoryStrategy {
 	if c, ok := r.metalContext(); ok {
 		strategies = append(strategies, MetalSharedMemory{Context: c})
 	}
+	strategies = append(strategies, GoHeapMemory{})
 	return strategies
 }
 func (r dagStrategyResolver) cudaDeviceOrdinal() (int, bool) {

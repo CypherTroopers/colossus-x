@@ -83,15 +83,13 @@ func ParseCLIConfig(args []string) (CLIConfig, error) {
 	fs := flag.NewFlagSet("colossusx", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 
-	modeName := fs.String("mode", string(cx.ModeStrict), "operating mode: strict or research")
+	modeName := fs.String("mode", string(cx.ModeStrict), "operating mode (strict only)")
 	backendName := fs.String("backend", string(BackendOpenCL), "mining backend: cuda, opencl, metal, cpu, unified, or gpu")
 	dagAlloc := fs.String("dag-alloc", "auto", "dag allocation strategy: auto, go-heap, pinned-host, cuda-managed, opencl-svm, metal-shared")
 	initialDAGMiB := fs.Uint64("initial-dag-mib", DefaultInitialDAGMiB, "initial DAG size in MiB")
 	dagMiB := fs.Uint64("dag-mib", 0, "deprecated alias for -initial-dag-mib")
 	dagGrowthMiB := fs.Uint64("dag-growth-mib-per-epoch", DefaultDAGGrowthMiB, "DAG growth per epoch in MiB")
-	reads := fs.Uint64("reads", DefaultReadsPerH, "random DAG reads per hash")
 	workers := fs.Int("workers", runtime.NumCPU(), "mining worker count")
-	epochBlocks := fs.Uint64("epoch-blocks", DefaultEpochBlocks, "blocks per epoch")
 	headerHex := fs.String("header", "434f4c4f535355532d582d544553542d4845414445522d303031", "header bytes in hex")
 	epochSeedHex := fs.String("epoch-seed", "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff", "epoch seed in hex")
 	targetHex := fs.String("target", "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "32-byte big-endian target hex")
@@ -113,19 +111,13 @@ func ParseCLIConfig(args []string) (CLIConfig, error) {
 	if *dagMiB != 0 {
 		*initialDAGMiB = *dagMiB
 	}
-	spec := cx.ResearchSpecWithGrowth((*initialDAGMiB)*1024*1024, (*dagGrowthMiB)*1024*1024, *reads, *epochBlocks)
-	if mode == cx.ModeStrict {
-		spec = cx.StrictSpec()
-		if *reads != cx.StrictReadsPerHash || *epochBlocks != cx.StrictEpochBlocks {
-			return CLIConfig{}, fmt.Errorf("strict mode does not allow overriding reads or epoch constants")
-		}
-		if *dagGrowthMiB != DefaultDAGGrowthMiB {
-			spec.DAGGrowthBytesPerEpoch = (*dagGrowthMiB) * 1024 * 1024
-		}
-		if *initialDAGMiB != DefaultInitialDAGMiB {
-			spec.InitialDAGSizeBytes = (*initialDAGMiB) * 1024 * 1024
-			spec.DAGSizeBytes = spec.InitialDAGSizeBytes
-		}
+	spec := cx.StrictSpec()
+	if *dagGrowthMiB != DefaultDAGGrowthMiB {
+		spec.DAGGrowthBytesPerEpoch = (*dagGrowthMiB) * 1024 * 1024
+	}
+	if *initialDAGMiB != DefaultInitialDAGMiB {
+		spec.InitialDAGSizeBytes = (*initialDAGMiB) * 1024 * 1024
+		spec.DAGSizeBytes = spec.InitialDAGSizeBytes
 	}
 	if err := spec.Validate(); err != nil {
 		return CLIConfig{}, err
@@ -221,7 +213,7 @@ func PrintConfig(cfg CLIConfig, backend HashBackend, strategy MemoryStrategy) {
 
 func parseMode(s string) (cx.Mode, error) {
 	switch cx.Mode(s) {
-	case cx.ModeStrict, cx.ModeResearch:
+	case cx.ModeStrict:
 		return cx.Mode(s), nil
 	default:
 		return "", fmt.Errorf("unsupported mode %q", s)

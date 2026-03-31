@@ -11,7 +11,7 @@ func TestHeaderEncodingDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := cx.ResearchSpecWithGrowth(8*1024*1024, 64*1024, 8, 16)
+	spec := cx.StrictSpecWithGrowth(8*1024*1024, 64*1024)
 	h := BlockHeader{Version: 1, Height: 7, Timestamp: 42, Target: target, Nonce: 9, EpochSeed: EpochSeedForHeight(spec, 7), DAGSizeBytes: spec.DAGSizeForHeight(7)}
 	if got, want := string(h.Encode()), string(h.Encode()); got != want {
 		t.Fatalf("encoding not stable")
@@ -22,7 +22,7 @@ func TestHeaderEncodingDeterministic(t *testing.T) {
 }
 
 func TestDAGSizeForHeightGrowthBoundaries(t *testing.T) {
-	spec := cx.ResearchSpecWithGrowth(8*1024*1024, 512*1024, 8, 16)
+	spec := cx.StrictSpecWithGrowth(8*1024*1024, 512*1024)
 	cases := []struct {
 		height uint64
 		want   uint64
@@ -40,7 +40,7 @@ func TestDAGSizeForHeightGrowthBoundaries(t *testing.T) {
 }
 
 func TestEpochSeedForHeightUsesResolvedDAGSize(t *testing.T) {
-	spec := cx.ResearchSpecWithGrowth(8*1024*1024, 512*1024, 8, 16)
+	spec := cx.StrictSpecWithGrowth(8*1024*1024, 512*1024)
 	seedSameEpochA := EpochSeedForHeight(spec, 1)
 	seedSameEpochB := EpochSeedForHeight(spec, 15)
 	if seedSameEpochA != seedSameEpochB {
@@ -53,6 +53,6 @@ func TestEpochSeedForHeightUsesResolvedDAGSize(t *testing.T) {
 }
 
 func TestDAGSizeForEpochOverflowDoesNotPanic(t *testing.T) {
-	spec := cx.ResearchSpecWithGrowth(8*1024*1024, 512*1024, 8, 16)
+	spec := cx.StrictSpecWithGrowth(8*1024*1024, 512*1024)
 	_ = spec.DAGSizeForEpoch(^uint64(0))
 }

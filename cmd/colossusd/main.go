@@ -92,13 +92,11 @@ type config struct {
 
 func parseFlags() (config, error) {
 	fs := flag.NewFlagSet("colossusd", flag.ContinueOnError)
-	modeName := fs.String("mode", string(cx.ModeResearch), "chain mode: strict or research")
+	modeName := fs.String("mode", string(cx.ModeStrict), "chain mode (strict only)")
 	networkID := fs.String("network", "devnet", "network identifier")
 	initialDAGMiB := fs.Uint64("initial-dag-mib", cx.StrictInitialDAGSizeBytes/(1024*1024), "initial DAG size in MiB")
 	dagMiB := fs.Uint64("dag-mib", 0, "deprecated alias for -initial-dag-mib")
 	dagGrowthMiB := fs.Uint64("dag-growth-mib-per-epoch", cx.DefaultDAGGrowthBytesPerEpoch/(1024*1024), "DAG growth per epoch in MiB")
-	reads := fs.Uint64("reads", 32, "DAG reads per hash for research mode")
-	epochBlocks := fs.Uint64("epoch-blocks", 32, "blocks per epoch for research mode")
 	mine := fs.Bool("mine", true, "enable local mining loop")
 	noMine := fs.Bool("no-mine", false, "disable local mining loop")
 	workers := fs.Int("workers", runtime.NumCPU(), "mining workers")
@@ -126,9 +124,6 @@ func parseFlags() (config, error) {
 	if *dagMiB != 0 {
 		*initialDAGMiB = *dagMiB
 	}
-	if mode == cx.ModeResearch && !setFlags["initial-dag-mib"] && !setFlags["dag-mib"] {
-		*initialDAGMiB = 8
-	}
 	switch mode {
 	case cx.ModeStrict:
 		spec = cx.StrictSpec()
@@ -139,8 +134,6 @@ func parseFlags() (config, error) {
 		if *dagGrowthMiB != cx.DefaultDAGGrowthBytesPerEpoch/(1024*1024) {
 			spec.DAGGrowthBytesPerEpoch = (*dagGrowthMiB) * 1024 * 1024
 		}
-	case cx.ModeResearch:
-		spec = cx.ResearchSpecWithGrowth((*initialDAGMiB)*1024*1024, (*dagGrowthMiB)*1024*1024, *reads, *epochBlocks)
 	default:
 		return config{}, fmt.Errorf("unsupported mode %q", *modeName)
 	}

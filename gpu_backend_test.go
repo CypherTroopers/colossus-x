@@ -96,7 +96,7 @@ func (r *fakeOpenCLRuntime) MetalContext() (MetalContext, bool) { return MetalCo
 
 func testResearchDAG(t *testing.T) *DAG {
 	t.Helper()
-	spec := Spec{Mode: cx.ModeResearch, DAGSizeBytes: 1024 * 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 8, EpochBlocks: DefaultEpochBlocks}
+	spec := Spec{Mode: cx.ModeStrict, DAGSizeBytes: 1024 * 1024, NodeSize: DefaultNodeSize, ReadsPerHash: 8, EpochBlocks: DefaultEpochBlocks}
 	dag, err := NewDAG(spec)
 	if err != nil {
 		t.Fatalf("NewDAG: %v", err)
@@ -143,7 +143,7 @@ func TestGPUHashMatchesCPUReference(t *testing.T) {
 }
 
 func TestSuccessfulGPURunAvoidsNormalFallback(t *testing.T) {
-	spec := Spec{Mode: cx.ModeResearch, DAGSizeBytes: 64 * 64, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
+	spec := Spec{Mode: cx.ModeStrict, DAGSizeBytes: 64 * 64, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
 	dag, err := NewDAG(spec)
 	if err != nil {
 		t.Fatalf("NewDAG: %v", err)

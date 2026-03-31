@@ -37,7 +37,7 @@ func (d *StatelessDAG) ReadNode(i uint64, out []byte) {
 	if d == nil || out == nil {
 		return
 	}
-	node := d.researchNode(i)
+	node := d.generatedNode(i)
 	copy(out, node)
 }
 
@@ -58,7 +58,7 @@ func (d *StatelessDAG) ReadTensorTile(i uint64, out *TensorTile) {
 	copy(out.Meta[:], raw[32:64])
 }
 
-func (d *StatelessDAG) researchNode(i uint64) []byte {
+func (d *StatelessDAG) generatedNode(i uint64) []byte {
 	tmp := make([]byte, len(d.epochSeed)+8)
 	copy(tmp, d.epochSeed)
 	binary.LittleEndian.PutUint64(tmp[len(d.epochSeed):], i)
