@@ -22,7 +22,7 @@ func TestParseCLIConfigColossusXModeAllowsDynamicDAGProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseCLIConfig: %v", err)
 	}
-	if cfg.Spec.InitialDAGSizeBytes != 80*1024*1024*1024 {
+	if cfg.Spec.InitialDAGSizeBytes != 32*1024*1024*1024 {
 		t.Fatalf("unexpected colossusx initial DAG size: %d", cfg.Spec.InitialDAGSizeBytes)
 	}
 	if cfg.Spec.DAGGrowthBytesPerEpoch != 256*1024*1024 {
