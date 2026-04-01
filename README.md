@@ -69,7 +69,7 @@ go run ./cmd/colossusx daemon \
   -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
   -mine=true \
   -workers 16 \
-  -miner-backend opencl \
+  -miner-backend unified \
   -miner-dag-alloc auto
 ```
 
@@ -94,7 +94,7 @@ Minimal example:
 ```bash
 go run ./cmd/colossusx mine \
   -mode colossusx \
-  -backend opencl \
+  -backend unified \
   -dag-alloc auto \
   -workers 16 \
   -max-nonces 200000
@@ -105,7 +105,7 @@ Full example with major flags:
 ```bash
 go run ./cmd/colossusx mine \
   -mode colossusx \
-  -backend opencl \
+  -backend unified \
   -dag-alloc auto \
   -initial-dag-mib 1024 \
   -dag-growth-mib-per-epoch 8 \
@@ -148,7 +148,7 @@ go run ./cmd/colossusx daemon \
   -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
   -node-id node-01 \
   -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
-  -miner-backend opencl \
+  -miner-backend unified \
   -miner-dag-alloc auto
 ```
 
@@ -170,7 +170,7 @@ go run ./cmd/colossusx daemon \
   -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
   -node-id node-01 \
   -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
-  -miner-backend opencl \
+  -miner-backend unified \
   -miner-dag-alloc auto
 ```
 
