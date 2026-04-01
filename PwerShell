@@ -60,16 +60,16 @@ For real node operation, use the executable form that supports the **`daemon`** 
 Minimal example:
 
 ```bash
-go run ./cmd/colossusx daemon \
-  -mode colossusx \
-  -network mainnet \
-  -datadir ./data \
-  -listen :30333 \
-  -node-id node-01 \
-  -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
-  -mine=true \
-  -workers 16 \
-  -miner-backend opencl \
+go run ./cmd/colossusx daemon `
+  -mode colossusx `
+  -network mainnet `
+  -datadir .\data `
+  -listen :30333 `
+  -node-id node-01 `
+  -bootnodes 203.0.113.10:30333,203.0.113.11:30333 `
+  -mine=true `
+  -workers 16 `
+  -miner-backend unified `
   -miner-dag-alloc auto
 ```
 
