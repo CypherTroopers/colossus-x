@@ -192,6 +192,15 @@ func (n *Node) onHello(peer *p2p.Peer, msg p2p.HelloMessage) {
 
 func (n *Node) onStatus(peer *p2p.Peer, msg p2p.StatusMessage) {
 	n.cfg.Logf("status received peer=%s height=%d hash=%s total_work=%s", msg.Status.PeerID, msg.Status.BestHeight, msg.Status.BestHash.String(), msg.Status.TotalWork)
+	local, err := n.localStatus()
+	if err != nil {
+		n.cfg.Logf("status compare failed: %v", err)
+		return
+	}
+	if local.BestHeight <= msg.Status.BestHeight {
+		return
+	}
+	n.sendBlocksFromHeight(peer, msg.Status.BestHeight+1, local.BestHeight)
 }
 
 func (n *Node) onPing(peer *p2p.Peer, msg p2p.PingMessage) {
@@ -242,6 +251,24 @@ func (n *Node) broadcastStatus() {
 
 func (n *Node) broadcastNewBlock(block types.Block) {
 	n.p2p.Broadcast(p2p.Message{Type: p2p.MessageNewBlk, Body: p2p.NewBlockMessage{Block: block}})
+}
+
+func (n *Node) sendBlocksFromHeight(peer *p2p.Peer, start, end uint64) {
+	if start > end {
+		return
+	}
+	for height := start; height <= end; height++ {
+		block, err := n.store.GetBlockByHeight(height)
+		if err != nil {
+			n.cfg.Logf("sync block lookup failed peer=%s height=%d err=%v", peer.ID, height, err)
+			return
+		}
+		if err := peer.Send(p2p.Message{Type: p2p.MessageNewBlk, Body: p2p.NewBlockMessage{Block: block}}); err != nil {
+			n.cfg.Logf("sync block send failed peer=%s height=%d err=%v", peer.ID, height, err)
+			return
+		}
+	}
+	n.cfg.Logf("sync blocks sent peer=%s start=%d end=%d", peer.ID, start, end)
 }
 
 func (n *Node) localStatus() (types.PeerStatus, error) {
