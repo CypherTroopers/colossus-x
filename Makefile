@@ -1,4 +1,5 @@
 BINARY := bin/colossusx
+CMD_DIR := ./cmd/colossusx
 GO ?= go
 
 .PHONY: help SKY colossusx run-help bench-small bench-cpu mine-easy clean
@@ -18,19 +19,19 @@ SKY:
 
 colossusx:
 	mkdir -p bin
-	$(GO) build -o $(BINARY) .
+	$(GO) build -o $(BINARY) $(CMD_DIR)
 
 run-help:
-	$(GO) run . -h
+	$(GO) run $(CMD_DIR) -h
 
 bench-small:
-	$(GO) run . -bench -backend unified -dag-mib 1 -max-nonces 1000 -workers 2
+	$(GO) run $(CMD_DIR) -bench -backend unified -dag-mib 1 -max-nonces 1000 -workers 2
 
 bench-cpu:
-	$(GO) run . -bench -backend cpu -dag-mib 1 -max-nonces 1000 -workers 2
+	$(GO) run $(CMD_DIR) -bench -backend cpu -dag-mib 1 -max-nonces 1000 -workers 2
 
 mine-easy:
-	$(GO) run . -backend unified -dag-mib 1 -workers 2 -max-nonces 10 -target ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+	$(GO) run $(CMD_DIR) -backend unified -dag-mib 1 -workers 2 -max-nonces 10 -target ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 
 clean:
 	python -c "import os, shutil; shutil.rmtree('bin', ignore_errors=True)"
