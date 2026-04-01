@@ -79,7 +79,6 @@ Using a built binary:
 ./bin/colossusx daemon -mode colossusx -network mainnet -datadir ./data -listen :30333
 ```
 
-> Note: currently, only `colossusx` mode is supported.
 
 ---
 
@@ -92,29 +91,29 @@ Colossus-X follows a single-binary, multi-entry-point CLI design. Use `mine`, `d
 Minimal example:
 
 ```bash
-go run ./cmd/colossusx mine \
-  -mode colossusx \
-  -backend opencl \
-  -dag-alloc auto \
-  -workers 16 \
+go run ./cmd/colossusx mine `
+  -mode colossusx `
+  -backend unified `
+  -dag-alloc auto `
+  -workers 16 `
   -max-nonces 200000
 ```
 
 Full example with major flags:
 
 ```bash
-go run ./cmd/colossusx mine \
-  -mode colossusx \
-  -backend opencl \
-  -dag-alloc auto \
-  -initial-dag-mib 1024 \
-  -dag-growth-mib-per-epoch 8 \
-  -workers 16 \
-  -header 0000000000000000000000000000000000000000000000000000000000000000 \
-  -epoch-seed 0000000000000000000000000000000000000000000000000000000000000000 \
-  -target 00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
-  -start-nonce 0 \
-  -max-nonces 200000 \
+go run ./cmd/colossusx mine `
+  -mode colossusx `
+  -backend opencl `
+  -dag-alloc auto `
+  -initial-dag-mib 1024 `
+  -dag-growth-mib-per-epoch 8 `
+  -workers 16 `
+  -header 0000000000000000000000000000000000000000000000000000000000000000 `
+  -epoch-seed 0000000000000000000000000000000000000000000000000000000000000000 `
+  -target 00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff `
+  -start-nonce 0 `
+  -max-nonces 200000 `
   -bench=false
 ```
 
@@ -123,54 +122,54 @@ go run ./cmd/colossusx mine \
 Minimal example:
 
 ```bash
-go run ./cmd/colossusx daemon \
-  -mode colossusx \
-  -network mainnet \
-  -datadir ./data \
+go run ./cmd/colossusx daemon `
+  -mode colossusx `
+  -network mainnet `
+  -datadir .\data `
   -listen :30333
 ```
 
 Full example with major flags:
 
 ```bash
-go run ./cmd/colossusx daemon \
-  -mode colossusx \
-  -network mainnet \
-  -initial-dag-mib 1024 \
-  -dag-growth-mib-per-epoch 8 \
-  -mine=true \
-  -workers 16 \
-  -max-nonces 500000 \
-  -block-time 500ms \
-  -genesis-message "colossusx mainnet genesis" \
-  -datadir ./data \
-  -listen :30333 \
-  -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
-  -node-id node-01 \
-  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
-  -miner-backend opencl \
+go run ./cmd/colossusx daemon `
+  -mode colossusx `
+  -network mainnet `
+  -initial-dag-mib 1024 `
+  -dag-growth-mib-per-epoch 8 `
+  -mine=true `
+  -workers 16 `
+  -max-nonces 500000 `
+  -block-time 500ms `
+  -genesis-message "colossusx mainnet genesis" `
+  -datadir .\data `
+  -listen :30333 `
+  -bootnodes 203.0.113.10:30333,203.0.113.11:30333 `
+  -node-id node-01 `
+  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff `
+  -miner-backend opencl `
   -miner-dag-alloc auto
 ```
 
 Verification/relay node example (mining disabled):
 
 ```bash
-go run ./cmd/colossusx daemon \
-  -mode colossusx \
-  -network mainnet \
-  -initial-dag-mib 1024 \
-  -dag-growth-mib-per-epoch 8 \
-  -no-mine \
-  -workers 16 \
-  -max-nonces 500000 \
-  -block-time 500ms \
-  -genesis-message "colossusx mainnet genesis" \
-  -datadir ./data \
-  -listen :30333 \
-  -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
-  -node-id node-01 \
-  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
-  -miner-backend opencl \
+go run ./cmd/colossusx daemon `
+  -mode colossusx `
+  -network mainnet `
+  -initial-dag-mib 1024 `
+  -dag-growth-mib-per-epoch 8 `
+  -no-mine `
+  -workers 16 `
+  -max-nonces 500000 `
+  -block-time 500ms `
+  -genesis-message "colossusx mainnet genesis" `
+  -datadir .\data `
+  -listen :30333 `
+  -bootnodes 203.0.113.10:30333,203.0.113.11:30333 `
+  -node-id node-01 `
+  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff `
+  -miner-backend opencl `
   -miner-dag-alloc auto
 ```
 
@@ -179,20 +178,20 @@ go run ./cmd/colossusx daemon \
 Header validation:
 
 ```bash
-go run ./cmd/colossusx verify \
-  -mode colossusx \
-  -header ./examples/header.json \
-  -initial-dag-mib 1024 \
+go run ./cmd/colossusx verify `
+  -mode colossusx `
+  -header .\examples\header.json `
+  -initial-dag-mib 1024 `
   -dag-growth-mib-per-epoch 8
 ```
 
 Block validation:
 
 ```bash
-go run ./cmd/colossusx verify \
-  -mode colossusx \
-  -block ./examples/block.json \
-  -initial-dag-mib 1024 \
+go run ./cmd/colossusx verify `
+  -mode colossusx `
+  -block .\examples\block.json `
+  -initial-dag-mib 1024 `
   -dag-growth-mib-per-epoch 8
 ```
 
@@ -301,7 +300,7 @@ go test ./pkg/types -v
 
 ```bash
 # Help
-./bin/colossusx -h
+.\bin\colossusx.exe -h
 
 # Small benchmark (unified)
 go run . -bench -backend unified -dag-mib 1 -max-nonces 1000 -workers 2
