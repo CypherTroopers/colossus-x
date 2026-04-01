@@ -363,6 +363,11 @@ This structure allows consistent PoW semantics while switching computation and m
 
 `verify` is intended for offline or pipeline-integrated PoW validation from JSON artifacts.
 
+> **Current ColossusX behavior (important):**
+> - The `cmd/colossusx verify` path currently calls `VerifyHeaderStateless`, and stateless verification is disabled for ColossusX v2.
+> - Full block validation in `pkg/consensus/validator.go` reconstructs and caches the epoch DAG locally before verifying the ColossusX solution and DAG Merkle root.
+> - In other words, the production validator is **not** a "no local DAG allocation" verifier at this time.
+
 - **Header mode** (`-header path/to/header.json`)
   - Loads a `types.BlockHeader` JSON object.
   - Reconstructs required epoch/DAG context from header fields and verification flags.
