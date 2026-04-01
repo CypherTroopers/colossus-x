@@ -105,8 +105,8 @@ func TestColossusXModeDynamicDAGProfile(t *testing.T) {
 	if err := colossusx.Validate(); err != nil {
 		t.Fatalf("ColossusXSpec should validate: %v", err)
 	}
-	if colossusx.InitialDAGSizeBytes != 80*1024*1024*1024 {
-		t.Fatalf("expected colossusx initial DAG size 80GiB, got %d", colossusx.InitialDAGSizeBytes)
+	if colossusx.InitialDAGSizeBytes != 32*1024*1024*1024 {
+		t.Fatalf("expected colossusx initial DAG size 32GiB, got %d", colossusx.InitialDAGSizeBytes)
 	}
 	if colossusx.DAGGrowthBytesPerEpoch != 256*1024*1024 {
 		t.Fatalf("expected colossusx DAG growth 256MiB, got %d", colossusx.DAGGrowthBytesPerEpoch)

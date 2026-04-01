@@ -22,7 +22,7 @@ func colossusXCacheEntriesForSpec(spec Spec) int {
 	// Keep production colossusx profile at the full 512 MiB cache, while allowing
 	// smaller deterministic fixtures used by tests and simulations to scale down.
 	if initial := spec.initialDAGSize(); initial > 0 && initial < ColossusXInitialDAGSizeBytes {
-		scaled := initial / 160 // preserve 512 MiB : 80 GiB ratio
+		scaled := initial / 64 // preserve 512 MiB : 32 GiB ratio
 		minBytes := uint64(colossusXMinCacheEntries * colossusXSeedCacheEntry)
 		if scaled < minBytes {
 			scaled = minBytes
