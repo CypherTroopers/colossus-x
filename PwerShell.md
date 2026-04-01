@@ -5,13 +5,15 @@ Colossus-X is a PoW miner/node implementation written in Go. The CLI currently p
 - `daemon` (`node` alias): start the full node runtime
 - `verify`: validate PoW from header/block JSON input
 
+> Copy-paste friendly note: command examples below are written for Windows PowerShell users to paste and run directly.
+
 ---
 
 ## 1. Setup (from `git clone` to run)
 
 ### 1-1. Clone
 
-```bash
+```powershell
 git clone https://github.com/CypherTroopers/colossus-x.git
 cd colossus-x
 ```
@@ -23,14 +25,14 @@ cd colossus-x
 
 Example checks:
 
-```bash
+```powershell
 go version
 make --version
 ```
 
 ### 1-3. Resolve dependencies and build
 
-```bash
+```powershell
 # Download dependencies
 go mod download
 
@@ -41,7 +43,7 @@ go build -o .\bin\colossusx.exe .
 
 Using `make`:
 
-```bash
+```powershell
 make SKY
 make colossusx
 ```
@@ -59,24 +61,14 @@ For real node operation, use the executable form that supports the **`daemon`** 
 
 Minimal example:
 
-```bash
-go run ./cmd/colossusx daemon `
-  -mode colossusx `
-  -network mainnet `
-  -datadir .\data `
-  -listen :30333 `
-  -node-id node-01 `
-  -bootnodes 203.0.113.10:30333,203.0.113.11:30333 `
-  -mine=true `
-  -workers 16 `
-  -miner-backend unified `
-  -miner-dag-alloc auto
+```powershell
+go run ./cmd/colossusx daemon  -mode colossusx  -network mainnet  -datadir .\data  -listen :30333  -node-id node-01  -bootnodes 203.0.113.10:30333,203.0.113.11:30333  -mine=true  -workers 16  -miner-backend unified  -miner-dag-alloc auto
 ```
 
 Using a built binary:
 
-```bash
-./bin/colossusx daemon -mode colossusx -network mainnet -datadir ./data -listen :30333
+```powershell
+.\bin\colossusx.exe daemon -mode colossusx -network mainnet -datadir .\data -listen :30333
 ```
 
 
@@ -90,109 +82,48 @@ Colossus-X follows a single-binary, multi-entry-point CLI design. Use `mine`, `d
 
 Minimal example:
 
-```bash
-go run ./cmd/colossusx mine `
-  -mode colossusx `
-  -backend unified `
-  -dag-alloc auto `
-  -workers 16 `
-  -max-nonces 200000
+```powershell
+go run ./cmd/colossusx mine  -mode colossusx  -backend unified  -dag-alloc auto  -workers 16  -max-nonces 200000
 ```
 
 Full example with major flags:
 
-```bash
-go run ./cmd/colossusx mine `
-  -mode colossusx `
-  -backend opencl `
-  -dag-alloc auto `
-  -initial-dag-mib 1024 `
-  -dag-growth-mib-per-epoch 8 `
-  -workers 16 `
-  -header 0000000000000000000000000000000000000000000000000000000000000000 `
-  -epoch-seed 0000000000000000000000000000000000000000000000000000000000000000 `
-  -target 00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff `
-  -start-nonce 0 `
-  -max-nonces 200000 `
-  -bench=false
+```powershell
+go run ./cmd/colossusx mine  -mode colossusx  -backend opencl  -dag-alloc auto  -initial-dag-mib 1024  -dag-growth-mib-per-epoch 8  -workers 16  -header 0000000000000000000000000000000000000000000000000000000000000000  -epoch-seed 0000000000000000000000000000000000000000000000000000000000000000  -target 00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  -start-nonce 0  -max-nonces 200000  -bench=false
 ```
 
 ### 2.5-2. `daemon` (start node)
 
 Minimal example:
 
-```bash
-go run ./cmd/colossusx daemon `
-  -mode colossusx `
-  -network mainnet `
-  -datadir .\data `
-  -listen :30333
+```powershell
+go run ./cmd/colossusx daemon  -mode colossusx  -network mainnet  -datadir .\data  -listen :30333
 ```
 
 Full example with major flags:
 
-```bash
-go run ./cmd/colossusx daemon `
-  -mode colossusx `
-  -network mainnet `
-  -initial-dag-mib 1024 `
-  -dag-growth-mib-per-epoch 8 `
-  -mine=true `
-  -workers 16 `
-  -max-nonces 500000 `
-  -block-time 500ms `
-  -genesis-message "colossusx mainnet genesis" `
-  -datadir .\data `
-  -listen :30333 `
-  -bootnodes 203.0.113.10:30333,203.0.113.11:30333 `
-  -node-id node-01 `
-  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff `
-  -miner-backend opencl `
-  -miner-dag-alloc auto
+```powershell
+go run ./cmd/colossusx daemon  -mode colossusx  -network mainnet  -initial-dag-mib 1024  -dag-growth-mib-per-epoch 8  -mine=true  -workers 16  -max-nonces 500000  -block-time 500ms  -genesis-message "colossusx mainnet genesis"  -datadir .\data  -listen :30333  -bootnodes 203.0.113.10:30333,203.0.113.11:30333  -node-id node-01  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  -miner-backend opencl  -miner-dag-alloc auto
 ```
 
 Verification/relay node example (mining disabled):
 
-```bash
-go run ./cmd/colossusx daemon `
-  -mode colossusx `
-  -network mainnet `
-  -initial-dag-mib 1024 `
-  -dag-growth-mib-per-epoch 8 `
-  -no-mine `
-  -workers 16 `
-  -max-nonces 500000 `
-  -block-time 500ms `
-  -genesis-message "colossusx mainnet genesis" `
-  -datadir .\data `
-  -listen :30333 `
-  -bootnodes 203.0.113.10:30333,203.0.113.11:30333 `
-  -node-id node-01 `
-  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff `
-  -miner-backend opencl `
-  -miner-dag-alloc auto
+```powershell
+go run ./cmd/colossusx daemon  -mode colossusx  -network mainnet  -initial-dag-mib 1024  -dag-growth-mib-per-epoch 8  -no-mine  -workers 16  -max-nonces 500000  -block-time 500ms  -genesis-message "colossusx mainnet genesis"  -datadir .\data  -listen :30333  -bootnodes 203.0.113.10:30333,203.0.113.11:30333  -node-id node-01  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  -miner-backend opencl  -miner-dag-alloc auto
 ```
 
 ### 2.5-3. `verify` (PoW validation)
 
 Header validation:
 
-```bash
-go run ./cmd/colossusx verify `
-  -mode colossusx `
-  -header .\examples\header.json `
-  -initial-dag-mib 1024 `
-  -dag-growth-mib-per-epoch 8
+```powershell
+go run ./cmd/colossusx verify  -mode colossusx  -header .\examples\header.json  -initial-dag-mib 1024  -dag-growth-mib-per-epoch 8
 ```
 
 Block validation:
 
-```bash
-go run ./cmd/colossusx verify `
-  -mode colossusx `
-  -block .\examples\block.json `
-  -initial-dag-mib 1024 `
-  -dag-growth-mib-per-epoch 8
+```powershell
+go run ./cmd/colossusx verify  -mode colossusx  -block .\examples\block.json  -initial-dag-mib 1024  -dag-growth-mib-per-epoch 8
 ```
 
 > `verify` does not allow using `-header` and `-block` together. Choose exactly one.
@@ -282,13 +213,13 @@ Because accelerator environments vary, start with `-backend cpu` or `-backend un
 
 ### 5-1. Full test suite
 
-```bash
+```powershell
 go test ./...
 ```
 
 ### 5-2. Key packages
 
-```bash
+```powershell
 go test ./colossusx -v
 go test ./pkg/node -v
 go test ./pkg/consensus -v
@@ -298,7 +229,7 @@ go test ./pkg/types -v
 
 ### 5-3. Lightweight CLI checks
 
-```bash
+```powershell
 # Help
 .\bin\colossusx.exe -h
 
@@ -314,7 +245,7 @@ go run . -backend unified -dag-mib 1 -workers 2 -max-nonces 10 -target fffffffff
 
 ### 5-4. Via Makefile targets
 
-```bash
+```powershell
 make run-help
 make bench-small
 make bench-cpu
