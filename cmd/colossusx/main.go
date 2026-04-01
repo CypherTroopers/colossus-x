@@ -263,7 +263,7 @@ func runVerify(args []string) error {
 		*initialDAGMiB = *dagMiB
 	}
 
-	header, err := loadHeader(*headerPath, *blockPath)
+	header, block, err := loadVerifyInput(*headerPath, *blockPath)
 	if err != nil {
 		return err
 	}
@@ -276,7 +276,39 @@ func runVerify(args []string) error {
 		return fmt.Errorf("epoch seed mismatch: expected=%s got=%s", expectedSeed.String(), header.EpochSeed.String())
 	}
 
-	hash, ok, err := cx.VerifyHeaderStateless(spec.ResolvedForHeight(header.Height), header.EncodeForMining(), cx.NewUint64Nonce(header.Nonce), header.EpochSeed[:], header.Target)
+	resolved := spec.ResolvedForHeight(header.Height)
+	resolved.DAGSizeBytes = header.DAGSizeBytes
+	if resolved.AlgorithmVersion >= 2 || resolved.Mode == cx.ModeColossusX {
+		if block == nil {
+			return errors.New("colossusx verify requires --block with colossusx_solution or colossusx_solution_compact")
+		}
+		var solution cx.ColossusXSolution
+		switch {
+		case block.ColossusXSolution != nil:
+			solution = *block.ColossusXSolution
+		case block.ColossusXSolutionCompact != nil:
+			expanded, err := cx.ExpandCompactColossusXSolution(*block.ColossusXSolutionCompact)
+			if err != nil {
+				return fmt.Errorf("invalid compact colossusx solution: %w", err)
+			}
+			solution = expanded
+		default:
+			return errors.New("block is missing colossusx solution fields")
+		}
+		if header.DAGMerkleRoot == (types.Hash{}) {
+			return errors.New("header is missing dag_merkle_root")
+		}
+		if err := cx.VerifyColossusXSolution(resolved, header.EncodeForMining(), header.Target, [32]byte(header.DAGMerkleRoot), solution); err != nil {
+			return err
+		}
+		fmt.Printf("valid=true\n")
+		fmt.Printf("target=%s\n", header.Target.String())
+		fmt.Printf("mode=%s\n", spec.Mode)
+		fmt.Printf("algorithm_version=%d\n", spec.AlgorithmVersion)
+		fmt.Printf("dag_size_bytes=%d\n", header.DAGSizeBytes)
+		return nil
+	}
+	hash, ok, err := cx.VerifyHeaderStateless(resolved, header.EncodeForMining(), cx.NewUint64Nonce(header.Nonce), header.EpochSeed[:], header.Target)
 	if err != nil {
 		return err
 	}
@@ -292,24 +324,24 @@ func runVerify(args []string) error {
 	return nil
 }
 
-func loadHeader(headerPath, blockPath string) (types.BlockHeader, error) {
+func loadVerifyInput(headerPath, blockPath string) (types.BlockHeader, *types.Block, error) {
 	switch {
 	case headerPath == "" && blockPath == "":
-		return types.BlockHeader{}, errors.New("set one of --header or --block")
+		return types.BlockHeader{}, nil, errors.New("set one of --header or --block")
 	case headerPath != "" && blockPath != "":
-		return types.BlockHeader{}, errors.New("use either --header or --block, not both")
+		return types.BlockHeader{}, nil, errors.New("use either --header or --block, not both")
 	case blockPath != "":
 		var block types.Block
 		if err := readJSONFile(blockPath, &block); err != nil {
-			return types.BlockHeader{}, err
+			return types.BlockHeader{}, nil, err
 		}
-		return block.Header, nil
+		return block.Header, &block, nil
 	default:
 		var header types.BlockHeader
 		if err := readJSONFile(headerPath, &header); err != nil {
-			return types.BlockHeader{}, err
+			return types.BlockHeader{}, nil, err
 		}
-		return header, nil
+		return header, nil, nil
 	}
 }
 

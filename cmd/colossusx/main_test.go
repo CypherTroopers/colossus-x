@@ -1,6 +1,16 @@
 package main
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	cx "colossusx/colossusx"
+	"colossusx/pkg/consensus"
+	"colossusx/pkg/types"
+)
 
 func TestParseDaemonFlagsAllowsCPUBackendInColossusXProduction(t *testing.T) {
 	cfg, err := parseDaemonFlags([]string{"-miner-backend=cpu", "-miner-dag-alloc=go-heap"})
@@ -58,5 +68,82 @@ func TestResolveCommand(t *testing.T) {
 		if cmd != tc.cmd {
 			t.Fatalf("resolveCommand(%v) = %q want %q", tc.args, cmd, tc.cmd)
 		}
+	}
+}
+
+func TestRunVerifyColossusXBlockUsesMerkleRootWithoutLocalDAG(t *testing.T) {
+	spec := cx.ColossusXSpec()
+	spec.InitialDAGSizeBytes = 1 * 1024 * 1024
+	spec.DAGSizeBytes = spec.InitialDAGSizeBytes
+	spec.DAGGrowthBytesPerEpoch = 1 * 1024 * 1024
+	target, err := cx.ParseTargetHex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chainCfg := types.ChainConfig{NetworkID: "verify-test", Spec: spec}
+	genesisCfg := types.GenesisConfig{ChainID: "verify-test", Message: "verify", Timestamp: time.Now().Unix() - 1, Bits: target, Spec: spec}
+	v, err := consensus.NewValidator(chainCfg, consensus.CPUBackend{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Close()
+	genesis, _, err := v.SealBlock(types.NewGenesisBlock(genesisCfg), 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tmp := t.TempDir()
+	blockPath := filepath.Join(tmp, "block.json")
+	raw, err := json.Marshal(genesis)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blockPath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := runVerify([]string{
+		"-block", blockPath,
+		"-initial-dag-mib", "1",
+		"-dag-growth-mib-per-epoch", "1",
+	}); err != nil {
+		t.Fatalf("runVerify should validate colossusx block with solution+merkle root: %v", err)
+	}
+}
+
+func TestRunVerifyColossusXHeaderModeRequiresBlockSolution(t *testing.T) {
+	spec := cx.ColossusXSpec()
+	spec.InitialDAGSizeBytes = 1 * 1024 * 1024
+	spec.DAGSizeBytes = spec.InitialDAGSizeBytes
+	spec.DAGGrowthBytesPerEpoch = 1 * 1024 * 1024
+	target, err := cx.ParseTargetHex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := types.BlockHeader{
+		Version:          1,
+		AlgorithmVersion: spec.AlgorithmVersion,
+		Height:           0,
+		Timestamp:        time.Now().Unix() - 1,
+		Target:           target,
+		Nonce:            0,
+		EpochSeed:        types.EpochSeedForHeight(spec, 0),
+		DAGSizeBytes:     spec.DAGSizeForHeight(0),
+		DAGMerkleRoot:    types.Hash{},
+	}
+	tmp := t.TempDir()
+	headerPath := filepath.Join(tmp, "header.json")
+	raw, err := json.Marshal(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(headerPath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := runVerify([]string{
+		"-header", headerPath,
+		"-initial-dag-mib", "1",
+		"-dag-growth-mib-per-epoch", "1",
+	}); err == nil {
+		t.Fatal("expected colossusx verify header mode to require block solution")
 	}
 }
