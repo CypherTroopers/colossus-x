@@ -277,16 +277,10 @@ func (v *Validator) SealBlock(block types.Block, maxNonces uint64) (types.Block,
 	if err := backend.Prepare(dag); err != nil {
 		return types.Block{}, cx.MineResult{}, err
 	}
-	var merkleProver cx.MerkleProver
+	var merkleRoot [32]byte
 	if block.Header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeColossusX {
-		prover, err := cx.NewMerkleProverFromAccessor(dag, dag.Spec().NodeSize)
-		if err != nil {
-			return types.Block{}, cx.MineResult{}, err
-		}
-		merkleProver = prover
-		root := prover.Root()
-		block.Header.DAGMerkleRoot = types.Hash(root)
-		v.cacheMerkleRoot(v.sharedDAGCacheKey(block.Header), root)
+		merkleRoot = v.merkleRootForDAG(block.Header, dag)
+		block.Header.DAGMerkleRoot = types.Hash(merkleRoot)
 	}
 	miner, err := cx.NewMiner(v.config.Spec, dag, v.workers, sealSkipPrepareBackend{backend})
 	if err != nil {
@@ -302,9 +296,12 @@ func (v *Validator) SealBlock(block types.Block, maxNonces uint64) (types.Block,
 	}
 	block.Header.Nonce = nonce.Uint64()
 	if block.Header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeColossusX {
-		solution, _, err := cx.BuildColossusXSolutionWithProver(dag.Spec(), block.Header.EncodeForMining(), nonce.Uint64(), dag, merkleProver)
+		solution, root, err := cx.BuildColossusXSolutionStreaming(dag.Spec(), block.Header.EncodeForMining(), nonce.Uint64(), dag)
 		if err != nil {
 			return types.Block{}, cx.MineResult{}, err
+		}
+		if root != merkleRoot {
+			return types.Block{}, cx.MineResult{}, fmt.Errorf("dag merkle root mismatch between cached root and streaming proof root")
 		}
 		compact := cx.CompactColossusXSolution(solution)
 		block.ColossusXSolutionCompact = &compact
