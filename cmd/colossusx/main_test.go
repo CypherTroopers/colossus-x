@@ -25,6 +25,9 @@ func TestParseDaemonFlagsAutoBackendUsesAutoResolution(t *testing.T) {
 	if cfg.MinerBackend != want {
 		t.Fatalf("expected auto backend to resolve to %q, got %q", want, cfg.MinerBackend)
 	}
+	if !cfg.AutoBackend {
+		t.Fatal("expected AutoBackend=true when -miner-backend=auto")
+	}
 }
 
 func TestParseDaemonFlagsAllowsCPUBackendInColossusXProduction(t *testing.T) {
