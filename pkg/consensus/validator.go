@@ -15,6 +15,7 @@ import (
 	cx "colossusx/colossusx"
 	"colossusx/pkg/chain"
 	"colossusx/pkg/types"
+	"github.com/zeebo/blake3"
 )
 
 var (
@@ -382,6 +383,61 @@ func dagMerkleLeaves(dag *cx.DAG) [][32]byte {
 	return cx.BuildMerkleLeaves(cells)
 }
 
+func hashMerklePair(left, right [32]byte) [32]byte {
+	var in [64]byte
+	copy(in[:32], left[:])
+	copy(in[32:], right[:])
+	return blake3.Sum256(in[:])
+}
+
+func dagMerkleRootStreaming(dag *cx.DAG) [32]byte {
+	if dag == nil || dag.NodeCount() == 0 {
+		return [32]byte{}
+	}
+	frontier := make([][32]byte, 0, 64)
+	present := make([]bool, 0, 64)
+	for i := uint64(0); i < dag.NodeCount(); i++ {
+		h := blake3.Sum256(dag.Node(i))
+		level := 0
+		for {
+			if level >= len(frontier) {
+				frontier = append(frontier, [32]byte{})
+				present = append(present, false)
+			}
+			if !present[level] {
+				frontier[level] = h
+				present[level] = true
+				break
+			}
+			h = hashMerklePair(frontier[level], h)
+			present[level] = false
+			level++
+		}
+	}
+	var acc [32]byte
+	accLevel := 0
+	hasAcc := false
+	for level := 0; level < len(frontier); level++ {
+		if !present[level] {
+			continue
+		}
+		node := frontier[level]
+		if !hasAcc {
+			acc = node
+			accLevel = level
+			hasAcc = true
+			continue
+		}
+		for accLevel < level {
+			acc = hashMerklePair(acc, acc)
+			accLevel++
+		}
+		acc = hashMerklePair(node, acc)
+		accLevel = level + 1
+	}
+	return acc
+}
+
 func (v *Validator) merkleRootForDAG(header types.BlockHeader, dag *cx.DAG) [32]byte {
 	key := v.sharedDAGCacheKey(header)
 	v.mu.Lock()
@@ -390,7 +446,7 @@ func (v *Validator) merkleRootForDAG(header types.BlockHeader, dag *cx.DAG) [32]
 		return root
 	}
 	v.mu.Unlock()
-	root := cx.BuildMerkleRoot(dagMerkleLeaves(dag))
+	root := dagMerkleRootStreaming(dag)
 	v.cacheMerkleRoot(key, root)
 	return root
 }
@@ -501,7 +557,7 @@ func (v *Validator) cachedDAGForHeader(header types.BlockHeader, allocator cx.Al
 	}
 	cache[key] = dag
 	if spec.AlgorithmVersion >= 2 || spec.Mode == cx.ModeColossusX {
-		v.colossusxMerkleRoots[key] = cx.BuildMerkleRoot(dagMerkleLeaves(dag))
+		v.colossusxMerkleRoots[key] = dagMerkleRootStreaming(dag)
 	}
 	return dag, nil
 }

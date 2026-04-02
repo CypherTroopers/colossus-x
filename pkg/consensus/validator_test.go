@@ -330,6 +330,28 @@ func TestColossusXEpochGraceWindowAcceptsPreviousEpochSeedAndSize(t *testing.T) 
 	}
 }
 
+func TestDAGMerkleRootStreamingMatchesMaterializedRoot(t *testing.T) {
+	chainCfg, genesisCfg := colossusxTestConfig(t)
+	v, err := NewValidator(chainCfg, CPUBackend{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Close()
+
+	genesis := types.NewGenesisBlock(genesisCfg)
+	header := testBlockHeader(chainCfg, genesis)
+	dag, err := v.sharedMiningDAGForHeader(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	streaming := dagMerkleRootStreaming(dag)
+	materialized := cx.BuildMerkleRoot(dagMerkleLeaves(dag))
+	if streaming != materialized {
+		t.Fatalf("streaming merkle root mismatch")
+	}
+}
+
 func TestSharedCacheKeyIgnoresAllocatorName(t *testing.T) {
 	chainCfg, genesisCfg := testConfig(t)
 	v, err := NewValidator(chainCfg, CPUBackend{}, 1)
