@@ -237,15 +237,38 @@ func initializeMining(cfg daemonConfig) (cx.HashBackend, miner.MemoryStrategy, s
 	if err != nil {
 		return nil, nil, "failed", err
 	}
-	status := "not-required"
-	if runtimeState != nil {
-		status = "ok"
-	}
+	status := runtimeInitStatus(runtimeState)
 	strategy, err := miner.ResolveDAGStrategyForMode(cfg.Chain.Spec.Mode, cfg.MinerBackend, runtimeState, cfg.MinerDAGAlloc)
 	if err != nil {
 		return nil, nil, status, err
 	}
 	return backend, strategy, status, nil
+}
+
+type runtimeCapabilityView interface {
+	CUDADeviceOrdinal() (int, bool)
+	OpenCLContext() (miner.OpenCLContext, bool)
+	MetalContext() (miner.MetalContext, bool)
+}
+
+func runtimeInitStatus(state any) string {
+	if state == nil {
+		return "not-required"
+	}
+	runtime, ok := state.(runtimeCapabilityView)
+	if !ok {
+		return "ok"
+	}
+	if _, ok := runtime.CUDADeviceOrdinal(); ok {
+		return "ok"
+	}
+	if _, ok := runtime.OpenCLContext(); ok {
+		return "ok"
+	}
+	if _, ok := runtime.MetalContext(); ok {
+		return "ok"
+	}
+	return "probed-no-accel"
 }
 
 func runVerify(args []string) error {
