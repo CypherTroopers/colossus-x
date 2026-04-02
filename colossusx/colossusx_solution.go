@@ -36,15 +36,24 @@ type ColossusXSolutionCompact struct {
 }
 
 func BuildColossusXSolution(spec Spec, header []byte, nonce uint64, dag DAGAccessor, leaves [][32]byte) (ColossusXSolution, [32]byte, error) {
+	prover, err := NewMerkleProverFromLeaves(leaves)
+	if err != nil {
+		return ColossusXSolution{}, [32]byte{}, err
+	}
+	return BuildColossusXSolutionWithProver(spec, header, nonce, dag, prover)
+}
+
+func BuildColossusXSolutionWithProver(spec Spec, header []byte, nonce uint64, dag DAGAccessor, prover MerkleProver) (ColossusXSolution, [32]byte, error) {
 	if dag == nil || dag.NodeCount() == 0 {
 		return ColossusXSolution{}, [32]byte{}, errors.New("dag is empty")
 	}
-	if len(leaves) == 0 {
-		return ColossusXSolution{}, [32]byte{}, errors.New("merkle leaves are empty")
+	if prover == nil {
+		return ColossusXSolution{}, [32]byte{}, errors.New("merkle prover is nil")
 	}
-	if uint64(len(leaves)) != dag.NodeCount() {
+	if prover.LeafCount() != dag.NodeCount() {
 		return ColossusXSolution{}, [32]byte{}, errors.New("merkle leaves must match dag node count")
 	}
+	root := prover.Root()
 	trace := ColossusXTraceHash(spec, header, NewUint64Nonce(nonce), dag)
 	out := ColossusXSolution{
 		Nonce:       nonce,
@@ -55,23 +64,31 @@ func BuildColossusXSolution(spec Spec, header []byte, nonce uint64, dag DAGAcces
 	for _, idx := range trace.Accessed {
 		cell := make([]byte, spec.NodeSize)
 		dag.ReadNode(uint64(idx), cell)
+		proof, err := prover.Proof(int(idx))
+		if err != nil {
+			return ColossusXSolution{}, [32]byte{}, err
+		}
 		out.MiningCells = append(out.MiningCells, SolutionCell{
 			Index: idx,
 			Data:  cell,
-			Proof: BuildMerkleProof(leaves, int(idx)),
+			Proof: proof,
 		})
 	}
 	auditIdx := ColossusXAuditIndicesFromSolutionHash(trace.SolutionHash, dag.NodeCount(), ColossusXAuditCellCount)
 	for _, idx := range auditIdx {
 		cell := make([]byte, spec.NodeSize)
 		dag.ReadNode(idx, cell)
+		proof, err := prover.Proof(int(idx))
+		if err != nil {
+			return ColossusXSolution{}, [32]byte{}, err
+		}
 		out.AuditCells = append(out.AuditCells, SolutionCell{
 			Index: uint32(idx),
 			Data:  cell,
-			Proof: BuildMerkleProof(leaves, int(idx)),
+			Proof: proof,
 		})
 	}
-	return out, trace.Result, nil
+	return out, root, nil
 }
 
 func VerifyColossusXSolution(spec Spec, header []byte, target Target, merkleRoot [32]byte, solution ColossusXSolution) error {

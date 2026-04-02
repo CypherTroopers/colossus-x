@@ -277,10 +277,14 @@ func (v *Validator) SealBlock(block types.Block, maxNonces uint64) (types.Block,
 	if err := backend.Prepare(dag); err != nil {
 		return types.Block{}, cx.MineResult{}, err
 	}
-	var colossusxLeaves [][32]byte
+	var merkleProver cx.MerkleProver
 	if block.Header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeColossusX {
-		colossusxLeaves = dagMerkleLeaves(dag)
-		root := cx.BuildMerkleRoot(colossusxLeaves)
+		prover, err := cx.NewMerkleProverFromAccessor(dag, dag.Spec().NodeSize)
+		if err != nil {
+			return types.Block{}, cx.MineResult{}, err
+		}
+		merkleProver = prover
+		root := prover.Root()
 		block.Header.DAGMerkleRoot = types.Hash(root)
 		v.cacheMerkleRoot(v.sharedDAGCacheKey(block.Header), root)
 	}
@@ -298,7 +302,7 @@ func (v *Validator) SealBlock(block types.Block, maxNonces uint64) (types.Block,
 	}
 	block.Header.Nonce = nonce.Uint64()
 	if block.Header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeColossusX {
-		solution, _, err := cx.BuildColossusXSolution(dag.Spec(), block.Header.EncodeForMining(), nonce.Uint64(), dag, colossusxLeaves)
+		solution, _, err := cx.BuildColossusXSolutionWithProver(dag.Spec(), block.Header.EncodeForMining(), nonce.Uint64(), dag, merkleProver)
 		if err != nil {
 			return types.Block{}, cx.MineResult{}, err
 		}
