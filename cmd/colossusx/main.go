@@ -174,7 +174,7 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 	bootnodes := fs.String("bootnodes", "", "comma-separated bootnode addresses")
 	nodeID := fs.String("node-id", "", "stable node identifier")
 	targetHex := fs.String("target", "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "mining target in hex")
-	minerBackend := fs.String("miner-backend", string(miner.BackendOpenCL), "mining backend: auto, cuda, opencl, metal, cpu, unified, or gpu (auto selects unified)")
+	minerBackend := fs.String("miner-backend", string(miner.BackendOpenCL), "mining backend: auto, cuda, opencl, metal, cpu, unified, or gpu (auto selects best available)")
 	minerDAGAlloc := fs.String("miner-dag-alloc", "auto", "mining DAG allocation strategy: auto, go-heap, pinned-host, cuda-managed, opencl-svm, metal-shared")
 	if err := fs.Parse(args); err != nil {
 		return daemonConfig{}, err

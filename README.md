@@ -222,7 +222,7 @@ go run ./cmd/colossusx verify \
 | `-bootnodes` | `""` | Comma-separated bootnodes. |
 | `-node-id` | `""` | Stable node identifier. |
 | `-target` | `0fffffffff...ffff` | Mining target (hex). |
-| `-miner-backend` | `opencl` | `auto/cuda/opencl/metal/cpu/unified/gpu` (`auto` resolves to `unified`). |
+| `-miner-backend` | `opencl` | `auto/cuda/opencl/metal/cpu/unified/gpu` (`auto` chooses `cuda`→`metal`→`opencl`→`unified`). |
 | `-miner-dag-alloc` | `auto` | `auto/go-heap/pinned-host/cuda-managed/opencl-svm/metal-shared`. |
 
 In `colossusx` production-like mode, `backend` and `dag-alloc` combinations are constrained; invalid combinations are rejected.
@@ -232,7 +232,7 @@ In `colossusx` production-like mode, `backend` and `dag-alloc` combinations are 
 | Flag | Default | Description |
 |---|---:|---|
 | `-mode` | `colossusx` | Runtime mode (only `colossusx`). |
-| `-backend` | `opencl` | `auto/cuda/opencl/metal/cpu/unified/gpu` (`auto` resolves to `unified`). |
+| `-backend` | `opencl` | `auto/cuda/opencl/metal/cpu/unified/gpu` (`auto` chooses `cuda`→`metal`→`opencl`→`unified`). |
 | `-dag-alloc` | `auto` | DAG allocation strategy. |
 | `-initial-dag-mib` | `1024` | Initial DAG size (MiB). |
 | `-dag-mib` | `0` | Deprecated alias of `-initial-dag-mib`. |

@@ -13,13 +13,17 @@ import (
 	"colossusx/pkg/types"
 )
 
-func TestParseDaemonFlagsAutoBackendMapsToUnified(t *testing.T) {
+func TestParseDaemonFlagsAutoBackendUsesAutoResolution(t *testing.T) {
 	cfg, err := parseDaemonFlags([]string{"-miner-backend=auto"})
 	if err != nil {
 		t.Fatalf("expected auto backend to parse, got err=%v", err)
 	}
-	if cfg.MinerBackend != "unified" {
-		t.Fatalf("expected auto backend to resolve to unified, got %q", cfg.MinerBackend)
+	want, err := miner.ParseBackendMode("auto")
+	if err != nil {
+		t.Fatalf("ParseBackendMode(auto): %v", err)
+	}
+	if cfg.MinerBackend != want {
+		t.Fatalf("expected auto backend to resolve to %q, got %q", want, cfg.MinerBackend)
 	}
 }
 

@@ -47,18 +47,52 @@ type runtimeBackend interface {
 	InitializeRuntime() error
 }
 
+var (
+	autoBackendCUDAProbe = func() bool {
+		_, err := currentCUDADeviceOrdinal()
+		return err == nil
+	}
+	autoBackendOpenCLProbe = func() bool {
+		rt := newOpenCLRuntime()
+		if rt == nil {
+			return false
+		}
+		if err := rt.Initialize(); err != nil {
+			return false
+		}
+		_, ok := rt.OpenCLContext()
+		return ok
+	}
+	autoBackendMetalProbe = func() bool {
+		return runtime.GOOS == "darwin"
+	}
+	autoBackendCandidateFactory = func(mode BackendMode) (HashBackend, error) {
+		return NewBackend(mode)
+	}
+	autoBackendBenchmarkNonces uint64 = 4096
+	autoBackendBenchmark              = func(cfg CLIConfig, dag *DAG, backend HashBackend, maxNonces uint64) (float64, error) {
+		m, err := cx.NewMiner(cfg.Spec, dag, cfg.Workers, skipPrepareBackend{backend})
+		if err != nil {
+			return 0, err
+		}
+		res := cx.Benchmark(m, cfg.Header, cx.NewUint64Nonce(cfg.StartNonce), maxNonces)
+		return res.HashRate, nil
+	}
+)
+
 type CLIConfig struct {
-	Mode       cx.Mode
-	Backend    BackendMode
-	DAGAlloc   string
-	Spec       Spec
-	Workers    int
-	Header     []byte
-	EpochSeed  []byte
-	Target     Target
-	StartNonce uint64
-	MaxNonces  uint64
-	BenchOnly  bool
+	Mode        cx.Mode
+	Backend     BackendMode
+	AutoBackend bool
+	DAGAlloc    string
+	Spec        Spec
+	Workers     int
+	Header      []byte
+	EpochSeed   []byte
+	Target      Target
+	StartNonce  uint64
+	MaxNonces   uint64
+	BenchOnly   bool
 }
 
 func Main(args []string) error {
@@ -84,7 +118,7 @@ func ParseCLIConfig(args []string) (CLIConfig, error) {
 	fs.SetOutput(os.Stdout)
 
 	modeName := fs.String("mode", string(cx.ModeColossusX), "operating mode (colossusx only)")
-	backendName := fs.String("backend", string(BackendOpenCL), "mining backend: auto, cuda, opencl, metal, cpu, unified, or gpu")
+	backendName := fs.String("backend", string(BackendOpenCL), "mining backend: auto, cuda, opencl, metal, cpu, unified, or gpu (auto selects best available)")
 	dagAlloc := fs.String("dag-alloc", "auto", "dag allocation strategy: auto, go-heap, pinned-host, cuda-managed, opencl-svm, metal-shared")
 	initialDAGMiB := fs.Uint64("initial-dag-mib", DefaultInitialDAGMiB, "initial DAG size in MiB")
 	dagMiB := fs.Uint64("dag-mib", 0, "deprecated alias for -initial-dag-mib")
@@ -139,7 +173,7 @@ func ParseCLIConfig(args []string) (CLIConfig, error) {
 		return CLIConfig{}, fmt.Errorf("invalid target: %w", err)
 	}
 
-	return CLIConfig{Mode: mode, Backend: backend, DAGAlloc: *dagAlloc, Spec: spec, Workers: *workers, Header: header, EpochSeed: epochSeed, Target: target, StartNonce: *startNonce, MaxNonces: *maxNonces, BenchOnly: *benchOnly}, nil
+	return CLIConfig{Mode: mode, Backend: backend, AutoBackend: *backendName == "auto", DAGAlloc: *dagAlloc, Spec: spec, Workers: *workers, Header: header, EpochSeed: epochSeed, Target: target, StartNonce: *startNonce, MaxNonces: *maxNonces, BenchOnly: *benchOnly}, nil
 }
 
 func Run(cfg CLIConfig, backend HashBackend) error {
@@ -171,8 +205,19 @@ func Run(cfg CLIConfig, backend HashBackend) error {
 		return fmt.Errorf("generate dag: %w", err)
 	}
 	fmt.Printf("dag generation completed in %s\n", time.Since(dagStart).Round(time.Second))
-	if err := backend.Prepare(dag); err != nil {
-		return err
+	prepared := false
+	if cfg.AutoBackend {
+		bestBackend, bestRate, err := autoTuneBackend(cfg, dag)
+		if err == nil && bestBackend != nil {
+			backend = bestBackend
+			prepared = true
+			fmt.Printf("auto backend benchmark selected: %s (%.2f H/s, nonces=%d)\n", backend.Mode(), bestRate, autoBackendBenchmarkNonces)
+		}
+	}
+	if !prepared {
+		if err := backend.Prepare(dag); err != nil {
+			return err
+		}
 	}
 	miner, err := cx.NewMiner(cfg.Spec, dag, cfg.Workers, skipPrepareBackend{backend})
 	if err != nil {
@@ -222,7 +267,7 @@ func parseMode(s string) (cx.Mode, error) {
 
 func ParseBackendMode(s string) (BackendMode, error) {
 	if s == "auto" {
-		return BackendUnified, nil
+		return resolveAutoBackendMode(), nil
 	}
 	switch BackendMode(s) {
 	case BackendCPU, BackendCUDA, BackendOpenCL, BackendMetal, BackendUnified, BackendGPU:
@@ -230,6 +275,66 @@ func ParseBackendMode(s string) (BackendMode, error) {
 	default:
 		return "", fmt.Errorf("unsupported backend %q", s)
 	}
+}
+
+func resolveAutoBackendMode() BackendMode {
+	if autoBackendCUDAProbe() {
+		return BackendCUDA
+	}
+	if autoBackendMetalProbe() {
+		return BackendMetal
+	}
+	if autoBackendOpenCLProbe() {
+		return BackendOpenCL
+	}
+	return BackendUnified
+}
+
+func autoBenchmarkCandidateModes() []BackendMode {
+	modes := make([]BackendMode, 0, 4)
+	if autoBackendCUDAProbe() {
+		modes = append(modes, BackendCUDA)
+	}
+	if autoBackendMetalProbe() {
+		modes = append(modes, BackendMetal)
+	}
+	if autoBackendOpenCLProbe() {
+		modes = append(modes, BackendOpenCL)
+	}
+	modes = append(modes, BackendUnified)
+	return modes
+}
+
+func autoTuneBackend(cfg CLIConfig, dag *DAG) (HashBackend, float64, error) {
+	candidates := autoBenchmarkCandidateModes()
+	var (
+		bestBackend HashBackend
+		bestRate    float64
+	)
+	for _, mode := range candidates {
+		backend, err := autoBackendCandidateFactory(mode)
+		if err != nil {
+			continue
+		}
+		if _, err := InitializeBackendRuntime(backend); err != nil {
+			continue
+		}
+		if err := backend.Prepare(dag); err != nil {
+			continue
+		}
+		rate, err := autoBackendBenchmark(cfg, dag, backend, autoBackendBenchmarkNonces)
+		if err != nil {
+			continue
+		}
+		if bestBackend == nil || rate > bestRate {
+			bestBackend = backend
+			bestRate = rate
+		}
+	}
+	if bestBackend == nil {
+		return nil, 0, fmt.Errorf("no auto backend candidates available for benchmark")
+	}
+	return bestBackend, bestRate, nil
 }
 
 func NewBackend(mode BackendMode) (HashBackend, error) {
