@@ -1,13 +1,21 @@
 package miner
 
 import (
+	"fmt"
 	"testing"
 
 	cx "colossusx/colossusx"
 )
 
+type fakeAutoBackend struct{ mode BackendMode }
+
+func (b *fakeAutoBackend) Mode() BackendMode                         { return b.mode }
+func (b *fakeAutoBackend) Description() string                       { return string(b.mode) }
+func (b *fakeAutoBackend) Prepare(*DAG) error                        { return nil }
+func (b *fakeAutoBackend) Hash([]byte, cx.Nonce, *DAG) cx.HashResult { return cx.HashResult{} }
+
 func TestParseBackendMode(t *testing.T) {
-	for _, mode := range []string{"unified", "cpu", "gpu"} {
+	for _, mode := range []string{"unified", "cpu", "gpu", "auto"} {
 		if _, err := ParseBackendMode(mode); err != nil {
 			t.Fatalf("ParseBackendMode(%q) returned error: %v", mode, err)
 		}
@@ -17,6 +25,129 @@ func TestParseBackendMode(t *testing.T) {
 	}
 }
 
+func TestParseBackendModeAutoMapsToUnified(t *testing.T) {
+	origCUDAProbe := autoBackendCUDAProbe
+	origMetalProbe := autoBackendMetalProbe
+	origOpenCLProbe := autoBackendOpenCLProbe
+	t.Cleanup(func() {
+		autoBackendCUDAProbe = origCUDAProbe
+		autoBackendMetalProbe = origMetalProbe
+		autoBackendOpenCLProbe = origOpenCLProbe
+	})
+
+	autoBackendCUDAProbe = func() bool { return false }
+	autoBackendMetalProbe = func() bool { return false }
+	autoBackendOpenCLProbe = func() bool { return false }
+
+	mode, err := ParseBackendMode("auto")
+	if err != nil {
+		t.Fatalf("ParseBackendMode(auto): %v", err)
+	}
+	if mode != BackendUnified {
+		t.Fatalf("expected auto to map to unified backend, got %q", mode)
+	}
+}
+
+func TestParseBackendModeAutoPrefersCUDAThenMetalThenOpenCL(t *testing.T) {
+	origCUDAProbe := autoBackendCUDAProbe
+	origMetalProbe := autoBackendMetalProbe
+	origOpenCLProbe := autoBackendOpenCLProbe
+	t.Cleanup(func() {
+		autoBackendCUDAProbe = origCUDAProbe
+		autoBackendMetalProbe = origMetalProbe
+		autoBackendOpenCLProbe = origOpenCLProbe
+	})
+
+	autoBackendCUDAProbe = func() bool { return true }
+	autoBackendMetalProbe = func() bool { return true }
+	autoBackendOpenCLProbe = func() bool { return true }
+	mode, err := ParseBackendMode("auto")
+	if err != nil {
+		t.Fatalf("ParseBackendMode(auto): %v", err)
+	}
+	if mode != BackendCUDA {
+		t.Fatalf("expected auto backend to prefer cuda, got %q", mode)
+	}
+
+	autoBackendCUDAProbe = func() bool { return false }
+	mode, err = ParseBackendMode("auto")
+	if err != nil {
+		t.Fatalf("ParseBackendMode(auto): %v", err)
+	}
+	if mode != BackendMetal {
+		t.Fatalf("expected auto backend to prefer metal when cuda unavailable, got %q", mode)
+	}
+
+	autoBackendMetalProbe = func() bool { return false }
+	mode, err = ParseBackendMode("auto")
+	if err != nil {
+		t.Fatalf("ParseBackendMode(auto): %v", err)
+	}
+	if mode != BackendOpenCL {
+		t.Fatalf("expected auto backend to prefer opencl when cuda/metal unavailable, got %q", mode)
+	}
+}
+
+func TestParseCLIConfigMarksAutoBackendRequest(t *testing.T) {
+	cfg, err := ParseCLIConfig([]string{"-backend=auto"})
+	if err != nil {
+		t.Fatalf("ParseCLIConfig: %v", err)
+	}
+	if !cfg.AutoBackend {
+		t.Fatal("expected AutoBackend=true when -backend=auto")
+	}
+}
+
+func TestAutoTuneBackendSelectsHighestBenchmarkRate(t *testing.T) {
+	origFactory := autoBackendCandidateFactory
+	origBenchmark := autoBackendBenchmark
+	origCUDAProbe := autoBackendCUDAProbe
+	origMetalProbe := autoBackendMetalProbe
+	origOpenCLProbe := autoBackendOpenCLProbe
+	origBenchmarkNonces := autoBackendBenchmarkNonces
+	t.Cleanup(func() {
+		autoBackendCandidateFactory = origFactory
+		autoBackendBenchmark = origBenchmark
+		autoBackendCUDAProbe = origCUDAProbe
+		autoBackendMetalProbe = origMetalProbe
+		autoBackendOpenCLProbe = origOpenCLProbe
+		autoBackendBenchmarkNonces = origBenchmarkNonces
+	})
+
+	autoBackendCUDAProbe = func() bool { return true }
+	autoBackendMetalProbe = func() bool { return true }
+	autoBackendOpenCLProbe = func() bool { return true }
+	autoBackendBenchmarkNonces = 32
+
+	autoBackendCandidateFactory = func(mode BackendMode) (HashBackend, error) {
+		return &fakeAutoBackend{mode: mode}, nil
+	}
+	autoBackendBenchmark = func(_ CLIConfig, _ *DAG, backend HashBackend, _ uint64) (float64, error) {
+		switch backend.Mode() {
+		case BackendCUDA:
+			return 100, nil
+		case BackendMetal:
+			return 500, nil
+		case BackendOpenCL:
+			return 300, nil
+		case BackendUnified:
+			return 50, nil
+		default:
+			return 0, fmt.Errorf("unexpected backend %q", backend.Mode())
+		}
+	}
+
+	best, rate, err := autoTuneBackend(CLIConfig{}, nil)
+	if err != nil {
+		t.Fatalf("autoTuneBackend: %v", err)
+	}
+	if best.Mode() != BackendMetal {
+		t.Fatalf("expected metal to win benchmark, got %q", best.Mode())
+	}
+	if rate != 500 {
+		t.Fatalf("expected benchmark rate 500, got %f", rate)
+	}
+}
 func TestParseCLIConfigColossusXModeAllowsDynamicDAGProfile(t *testing.T) {
 	cfg, err := ParseCLIConfig([]string{"-mode", "colossusx"})
 	if err != nil {

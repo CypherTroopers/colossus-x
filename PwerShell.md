@@ -62,7 +62,7 @@ For real node operation, use the executable form that supports the **`daemon`** 
 Minimal example:
 
 ```powershell
-go run ./cmd/colossusx daemon  -mode colossusx  -network mainnet  -datadir .\data  -listen :30333  -node-id node-01  -bootnodes 203.0.113.10:30333,203.0.113.11:30333  -mine=true  -workers 16  -miner-backend unified  -miner-dag-alloc auto
+go run ./cmd/colossusx daemon  -mode colossusx  -network mainnet  -datadir .\data  -listen :30333  -node-id node-01  -bootnodes 203.0.113.10:30333,203.0.113.11:30333  -mine=true  -workers 16  -miner-backend auto  -miner-dag-alloc auto
 ```
 
 Using a built binary:
@@ -103,13 +103,13 @@ go run ./cmd/colossusx daemon  -mode colossusx  -network mainnet  -datadir .\dat
 Full example with major flags:
 
 ```powershell
-go run ./cmd/colossusx daemon  -mode colossusx  -network mainnet  -initial-dag-mib 1024  -dag-growth-mib-per-epoch 8  -mine=true  -workers 16  -max-nonces 500000  -block-time 500ms  -genesis-message "colossusx mainnet genesis"  -datadir .\data  -listen :30333  -bootnodes 203.0.113.10:30333,203.0.113.11:30333  -node-id node-01  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  -miner-backend opencl  -miner-dag-alloc auto
+go run ./cmd/colossusx daemon  -mode colossusx  -network mainnet  -initial-dag-mib 1024  -dag-growth-mib-per-epoch 8  -mine=true  -workers 16  -max-nonces 500000  -block-time 500ms  -genesis-message "colossusx mainnet genesis"  -datadir .\data  -listen :30333  -bootnodes 203.0.113.10:30333,203.0.113.11:30333  -node-id node-01  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  -miner-backend auto  -miner-dag-alloc auto
 ```
 
 Verification/relay node example (mining disabled):
 
 ```powershell
-go run ./cmd/colossusx daemon  -mode colossusx  -network mainnet  -initial-dag-mib 1024  -dag-growth-mib-per-epoch 8  -no-mine  -workers 16  -max-nonces 500000  -block-time 500ms  -genesis-message "colossusx mainnet genesis"  -datadir .\data  -listen :30333  -bootnodes 203.0.113.10:30333,203.0.113.11:30333  -node-id node-01  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  -miner-backend opencl  -miner-dag-alloc auto
+go run ./cmd/colossusx daemon  -mode colossusx  -network mainnet  -initial-dag-mib 1024  -dag-growth-mib-per-epoch 8  -no-mine  -workers 16  -max-nonces 500000  -block-time 500ms  -genesis-message "colossusx mainnet genesis"  -datadir .\data  -listen :30333  -bootnodes 203.0.113.10:30333,203.0.113.11:30333  -node-id node-01  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  -miner-backend auto  -miner-dag-alloc auto
 ```
 
 ### 2.5-3. `verify` (PoW validation)

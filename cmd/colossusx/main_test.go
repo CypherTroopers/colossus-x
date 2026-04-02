@@ -7,10 +7,28 @@ import (
 	"testing"
 	"time"
 
+	miner "colossusx"
 	cx "colossusx/colossusx"
 	"colossusx/pkg/consensus"
 	"colossusx/pkg/types"
 )
+
+func TestParseDaemonFlagsAutoBackendUsesAutoResolution(t *testing.T) {
+	cfg, err := parseDaemonFlags([]string{"-miner-backend=auto"})
+	if err != nil {
+		t.Fatalf("expected auto backend to parse, got err=%v", err)
+	}
+	want, err := miner.ParseBackendMode("auto")
+	if err != nil {
+		t.Fatalf("ParseBackendMode(auto): %v", err)
+	}
+	if cfg.MinerBackend != want {
+		t.Fatalf("expected auto backend to resolve to %q, got %q", want, cfg.MinerBackend)
+	}
+	if !cfg.AutoBackend {
+		t.Fatal("expected AutoBackend=true when -miner-backend=auto")
+	}
+}
 
 func TestParseDaemonFlagsAllowsCPUBackendInColossusXProduction(t *testing.T) {
 	cfg, err := parseDaemonFlags([]string{"-miner-backend=cpu", "-miner-dag-alloc=go-heap"})
@@ -35,8 +53,48 @@ func TestInitializeMiningUnifiedGoHeap(t *testing.T) {
 	if strategy.Name() != "go-heap" {
 		t.Fatalf("expected go-heap strategy, got %q", strategy.Name())
 	}
-	if status != "not-required" {
-		t.Fatalf("expected not-required runtime status, got %q", status)
+	if status != "probed-no-accel" {
+		t.Fatalf("expected probed-no-accel runtime status, got %q", status)
+	}
+}
+
+type fakeRuntimeCapabilities struct {
+	cuda   bool
+	opencl bool
+	metal  bool
+}
+
+func (f fakeRuntimeCapabilities) CUDADeviceOrdinal() (int, bool) {
+	return 0, f.cuda
+}
+func (f fakeRuntimeCapabilities) OpenCLContext() (miner.OpenCLContext, bool) {
+	if !f.opencl {
+		return miner.OpenCLContext{}, false
+	}
+	return miner.OpenCLContext{Context: struct{}{}, Device: struct{}{}}, true
+}
+func (f fakeRuntimeCapabilities) MetalContext() (miner.MetalContext, bool) {
+	if !f.metal {
+		return miner.MetalContext{}, false
+	}
+	return miner.MetalContext{Device: struct{}{}}, true
+}
+
+func TestRuntimeInitStatus(t *testing.T) {
+	if got := runtimeInitStatus(nil); got != "not-required" {
+		t.Fatalf("expected not-required, got %q", got)
+	}
+	if got := runtimeInitStatus(fakeRuntimeCapabilities{}); got != "probed-no-accel" {
+		t.Fatalf("expected probed-no-accel, got %q", got)
+	}
+	if got := runtimeInitStatus(fakeRuntimeCapabilities{cuda: true}); got != "ok" {
+		t.Fatalf("expected ok with CUDA capability, got %q", got)
+	}
+	if got := runtimeInitStatus(fakeRuntimeCapabilities{opencl: true}); got != "ok" {
+		t.Fatalf("expected ok with OpenCL capability, got %q", got)
+	}
+	if got := runtimeInitStatus(fakeRuntimeCapabilities{metal: true}); got != "ok" {
+		t.Fatalf("expected ok with Metal capability, got %q", got)
 	}
 }
 

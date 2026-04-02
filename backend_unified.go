@@ -7,10 +7,15 @@ import (
 )
 
 type UnifiedBackend struct {
-	spec         Spec
-	shared       unifiedMemoryDAGView
-	scratch      *pooledScratch
-	strategyName string
+	spec               Spec
+	shared             unifiedMemoryDAGView
+	scratch            *pooledScratch
+	strategyName       string
+	runtimeProbed      bool
+	cudaDeviceOrdinal  int
+	cudaAvailable      bool
+	openclContext      OpenCLContext
+	openclSVMAvailable bool
 }
 
 func (b *UnifiedBackend) Mode() BackendMode { return BackendUnified }
