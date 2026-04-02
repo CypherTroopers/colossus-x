@@ -2,16 +2,9 @@ package miner
 
 import cx "colossusx/colossusx"
 
-type cpuNode []byte
-
-type cpuDAGView struct{ nodes []cpuNode }
-
-func (v cpuDAGView) NodeCount() uint64             { return uint64(len(v.nodes)) }
-func (v cpuDAGView) ReadNode(i uint64, out []byte) { copy(out, v.nodes[i]) }
-
 type CPUBackend struct {
 	spec    Spec
-	nodes   []cpuNode
+	view    contiguousDAGView
 	scratch *pooledScratch
 }
 
@@ -27,20 +20,19 @@ func (b *CPUBackend) Prepare(dag *DAG) error {
 		b.scratch = newPooledScratch()
 	}
 	b.spec = dag.Spec()
-	count := dag.NodeCount()
-	b.nodes = make([]cpuNode, count)
-	for i := uint64(0); i < count; i++ {
-		b.nodes[i] = append(make([]byte, 0, b.spec.NodeSize), dag.Node(i)...)
-	}
+	b.view = contiguousDAGView{dag: dag}
 	return nil
 }
 func (b *CPUBackend) Hash(header []byte, nonce cx.Nonce, dag *DAG) HashResult {
-	if len(b.nodes) == 0 && dag != nil {
+	if b.view.dag == nil && dag != nil {
 		_ = b.Prepare(dag)
+	}
+	if b.view.dag == nil {
+		return HashResult{}
 	}
 	s := b.scratch.acquire(len(header))
 	defer b.scratch.release(s)
-	return latticeHashWithAccessor(b.spec, header, nonce, cpuDAGView{nodes: b.nodes}, s)
+	return latticeHashWithAccessor(b.spec, header, nonce, b.view, s)
 }
 
 func (b *CPUBackend) HashBatch(header []byte, startNonce cx.Nonce, count uint64, dag *DAG) ([]HashResult, error) {

@@ -93,7 +93,7 @@ func TestUnifiedBackendUsesDAGAllocationDirectly(t *testing.T) {
 	}
 }
 
-func TestCPUBackendCopiesPreparedDAG(t *testing.T) {
+func TestCPUBackendUsesDAGAllocationDirectly(t *testing.T) {
 	spec := Spec{Mode: cx.ModeColossusX, DAGSizeBytes: 64 * 8, NodeSize: DefaultNodeSize, ReadsPerHash: 4, EpochBlocks: DefaultEpochBlocks}
 	dag, err := NewDAG(spec)
 	if err != nil {
@@ -111,8 +111,8 @@ func TestCPUBackendCopiesPreparedDAG(t *testing.T) {
 
 	copy(dag.Bytes(), make([]byte, len(dag.Bytes())))
 	mutated := backend.Hash([]byte("header"), cx.NewUint64Nonce(1), dag)
-	if original != mutated {
-		t.Fatal("expected prepared CPU backend to keep using its own copied DAG")
+	if original == mutated {
+		t.Fatal("expected cpu backend to observe DAG mutations through shared memory")
 	}
 }
 
