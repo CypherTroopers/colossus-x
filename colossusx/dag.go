@@ -3,7 +3,10 @@ package colossusx
 import (
 	"encoding/binary"
 	"errors"
+	"math"
 	"runtime"
+	"runtime/debug"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -178,6 +181,8 @@ func PopulateDAGWithProgress(dag *DAG, epochSeed []byte, workers int, progress f
 	if dag == nil {
 		return errors.New("dag cannot be nil")
 	}
+	restoreRuntime := tuneRuntimeForHeapDAGGeneration(dag)
+	defer restoreRuntime()
 	total := dag.NodeCount()
 	var done atomic.Uint64
 	stop := make(chan struct{})
@@ -204,4 +209,29 @@ func PopulateDAGWithProgress(dag *DAG, epochSeed []byte, workers int, progress f
 		progress(total, total)
 	}
 	return nil
+}
+
+func tuneRuntimeForHeapDAGGeneration(dag *DAG) func() {
+	if dag == nil {
+		return func() {}
+	}
+	switch strings.ToLower(strings.TrimSpace(dag.AllocationName())) {
+	case "go-heap", "go-slice":
+		// Go-heap DAG allocations are part of the GC live set. With default GOGC=100,
+		// the heap target can temporarily grow near 2x of the DAG size before a cycle.
+		// Tighten GC and set a bounded memory target during DAG generation.
+	default:
+		return func() {}
+	}
+	oldGC := debug.SetGCPercent(20)
+	headroom := dag.spec.DAGSizeBytes/4 + 256*1024*1024
+	limit := dag.spec.DAGSizeBytes + headroom + colossusXSeedCacheBytes
+	if limit > uint64(math.MaxInt64) {
+		limit = uint64(math.MaxInt64)
+	}
+	oldLimit := debug.SetMemoryLimit(int64(limit))
+	return func() {
+		debug.SetMemoryLimit(oldLimit)
+		debug.SetGCPercent(oldGC)
+	}
 }

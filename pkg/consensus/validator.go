@@ -15,6 +15,7 @@ import (
 	cx "colossusx/colossusx"
 	"colossusx/pkg/chain"
 	"colossusx/pkg/types"
+	"github.com/zeebo/blake3"
 )
 
 var (
@@ -135,6 +136,10 @@ func (v *Validator) MiningAllocatorName() string {
 }
 
 func (v *Validator) ValidateHeader(store chain.Store, header types.BlockHeader) error {
+	return v.validateHeader(store, header, true)
+}
+
+func (v *Validator) validateHeader(store chain.Store, header types.BlockHeader, verifyDAGMerkle bool) error {
 	if header.AlgorithmVersion != v.config.Spec.AlgorithmVersion {
 		return fmt.Errorf("%w: algorithm version mismatch", ErrInvalidEpoch)
 	}
@@ -168,13 +173,18 @@ func (v *Validator) ValidateHeader(store chain.Store, header types.BlockHeader) 
 		if header.DAGMerkleRoot == (types.Hash{}) {
 			return fmt.Errorf("%w: colossusx header missing dag merkle root", ErrInvalidPoW)
 		}
+		if verifyDAGMerkle {
+			if err := v.validateDAGMerkleRoot(header); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	return v.validatePoW(types.Block{Header: header})
 }
 
 func (v *Validator) ValidateBlock(store chain.Store, block types.Block) error {
-	if err := v.ValidateHeader(store, block.Header); err != nil {
+	if err := v.validateHeader(store, block.Header, false); err != nil {
 		return err
 	}
 	return v.validatePoW(block)
@@ -276,12 +286,10 @@ func (v *Validator) SealBlock(block types.Block, maxNonces uint64) (types.Block,
 	if err := backend.Prepare(dag); err != nil {
 		return types.Block{}, cx.MineResult{}, err
 	}
-	var colossusxLeaves [][32]byte
+	var merkleRoot [32]byte
 	if block.Header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeColossusX {
-		colossusxLeaves = dagMerkleLeaves(dag)
-		root := cx.BuildMerkleRoot(colossusxLeaves)
-		block.Header.DAGMerkleRoot = types.Hash(root)
-		v.cacheMerkleRoot(v.sharedDAGCacheKey(block.Header), root)
+		merkleRoot = v.merkleRootForDAG(block.Header, dag)
+		block.Header.DAGMerkleRoot = types.Hash(merkleRoot)
 	}
 	miner, err := cx.NewMiner(v.config.Spec, dag, v.workers, sealSkipPrepareBackend{backend})
 	if err != nil {
@@ -297,9 +305,12 @@ func (v *Validator) SealBlock(block types.Block, maxNonces uint64) (types.Block,
 	}
 	block.Header.Nonce = nonce.Uint64()
 	if block.Header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeColossusX {
-		solution, _, err := cx.BuildColossusXSolution(dag.Spec(), block.Header.EncodeForMining(), nonce.Uint64(), dag, colossusxLeaves)
+		solution, root, err := cx.BuildColossusXSolutionStreaming(dag.Spec(), block.Header.EncodeForMining(), nonce.Uint64(), dag)
 		if err != nil {
 			return types.Block{}, cx.MineResult{}, err
+		}
+		if root != merkleRoot {
+			return types.Block{}, cx.MineResult{}, fmt.Errorf("dag merkle root mismatch between cached root and streaming proof root")
 		}
 		compact := cx.CompactColossusXSolution(solution)
 		block.ColossusXSolutionCompact = &compact
@@ -356,8 +367,8 @@ func (v *Validator) validatePoW(block types.Block) error {
 			return fmt.Errorf("%w: colossusx solution is required", ErrInvalidPoW)
 		}
 		root := v.merkleRootForDAG(header, dag)
-		if root != [32]byte(header.DAGMerkleRoot) {
-			return fmt.Errorf("%w: dag merkle root mismatch", ErrInvalidPoW)
+		if err := v.validateDAGMerkleRootWithRoot(header, root); err != nil {
+			return err
 		}
 		if err := cx.VerifyColossusXSolution(dag.Spec(), header.EncodeForMining(), header.Target, root, solution); err != nil {
 			return fmt.Errorf("%w: colossusx solution verify failed: %v", ErrInvalidPoW, err)
@@ -367,6 +378,21 @@ func (v *Validator) validatePoW(block types.Block) error {
 	hash := v.backend.Hash(header.EncodeForMining(), cx.NewUint64Nonce(header.Nonce), dag)
 	if !cx.LessOrEqualBE(hash.Pow256, header.Target) {
 		return fmt.Errorf("%w: pow=%s target=%s", ErrInvalidPoW, hex.EncodeToString(hash.Pow256[:]), header.Target.String())
+	}
+	return nil
+}
+
+func (v *Validator) validateDAGMerkleRoot(header types.BlockHeader) error {
+	dag, err := v.validationDAGForHeader(header)
+	if err != nil {
+		return err
+	}
+	return v.validateDAGMerkleRootWithRoot(header, v.merkleRootForDAG(header, dag))
+}
+
+func (v *Validator) validateDAGMerkleRootWithRoot(header types.BlockHeader, root [32]byte) error {
+	if root != [32]byte(header.DAGMerkleRoot) {
+		return fmt.Errorf("%w: dag merkle root mismatch", ErrInvalidPoW)
 	}
 	return nil
 }
@@ -382,6 +408,61 @@ func dagMerkleLeaves(dag *cx.DAG) [][32]byte {
 	return cx.BuildMerkleLeaves(cells)
 }
 
+func hashMerklePair(left, right [32]byte) [32]byte {
+	var in [64]byte
+	copy(in[:32], left[:])
+	copy(in[32:], right[:])
+	return blake3.Sum256(in[:])
+}
+
+func dagMerkleRootStreaming(dag *cx.DAG) [32]byte {
+	if dag == nil || dag.NodeCount() == 0 {
+		return [32]byte{}
+	}
+	frontier := make([][32]byte, 0, 64)
+	present := make([]bool, 0, 64)
+	for i := uint64(0); i < dag.NodeCount(); i++ {
+		h := blake3.Sum256(dag.Node(i))
+		level := 0
+		for {
+			if level >= len(frontier) {
+				frontier = append(frontier, [32]byte{})
+				present = append(present, false)
+			}
+			if !present[level] {
+				frontier[level] = h
+				present[level] = true
+				break
+			}
+			h = hashMerklePair(frontier[level], h)
+			present[level] = false
+			level++
+		}
+	}
+	var acc [32]byte
+	accLevel := 0
+	hasAcc := false
+	for level := 0; level < len(frontier); level++ {
+		if !present[level] {
+			continue
+		}
+		node := frontier[level]
+		if !hasAcc {
+			acc = node
+			accLevel = level
+			hasAcc = true
+			continue
+		}
+		for accLevel < level {
+			acc = hashMerklePair(acc, acc)
+			accLevel++
+		}
+		acc = hashMerklePair(node, acc)
+		accLevel = level + 1
+	}
+	return acc
+}
+
 func (v *Validator) merkleRootForDAG(header types.BlockHeader, dag *cx.DAG) [32]byte {
 	key := v.sharedDAGCacheKey(header)
 	v.mu.Lock()
@@ -390,7 +471,7 @@ func (v *Validator) merkleRootForDAG(header types.BlockHeader, dag *cx.DAG) [32]
 		return root
 	}
 	v.mu.Unlock()
-	root := cx.BuildMerkleRoot(dagMerkleLeaves(dag))
+	root := dagMerkleRootStreaming(dag)
 	v.cacheMerkleRoot(key, root)
 	return root
 }
@@ -501,7 +582,7 @@ func (v *Validator) cachedDAGForHeader(header types.BlockHeader, allocator cx.Al
 	}
 	cache[key] = dag
 	if spec.AlgorithmVersion >= 2 || spec.Mode == cx.ModeColossusX {
-		v.colossusxMerkleRoots[key] = cx.BuildMerkleRoot(dagMerkleLeaves(dag))
+		v.colossusxMerkleRoots[key] = dagMerkleRootStreaming(dag)
 	}
 	return dag, nil
 }
