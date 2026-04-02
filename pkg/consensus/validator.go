@@ -136,6 +136,10 @@ func (v *Validator) MiningAllocatorName() string {
 }
 
 func (v *Validator) ValidateHeader(store chain.Store, header types.BlockHeader) error {
+	return v.validateHeader(store, header, true)
+}
+
+func (v *Validator) validateHeader(store chain.Store, header types.BlockHeader, verifyDAGMerkle bool) error {
 	if header.AlgorithmVersion != v.config.Spec.AlgorithmVersion {
 		return fmt.Errorf("%w: algorithm version mismatch", ErrInvalidEpoch)
 	}
@@ -169,13 +173,18 @@ func (v *Validator) ValidateHeader(store chain.Store, header types.BlockHeader) 
 		if header.DAGMerkleRoot == (types.Hash{}) {
 			return fmt.Errorf("%w: colossusx header missing dag merkle root", ErrInvalidPoW)
 		}
+		if verifyDAGMerkle {
+			if err := v.validateDAGMerkleRoot(header); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	return v.validatePoW(types.Block{Header: header})
 }
 
 func (v *Validator) ValidateBlock(store chain.Store, block types.Block) error {
-	if err := v.ValidateHeader(store, block.Header); err != nil {
+	if err := v.validateHeader(store, block.Header, false); err != nil {
 		return err
 	}
 	return v.validatePoW(block)
@@ -358,8 +367,8 @@ func (v *Validator) validatePoW(block types.Block) error {
 			return fmt.Errorf("%w: colossusx solution is required", ErrInvalidPoW)
 		}
 		root := v.merkleRootForDAG(header, dag)
-		if root != [32]byte(header.DAGMerkleRoot) {
-			return fmt.Errorf("%w: dag merkle root mismatch", ErrInvalidPoW)
+		if err := v.validateDAGMerkleRootWithRoot(header, root); err != nil {
+			return err
 		}
 		if err := cx.VerifyColossusXSolution(dag.Spec(), header.EncodeForMining(), header.Target, root, solution); err != nil {
 			return fmt.Errorf("%w: colossusx solution verify failed: %v", ErrInvalidPoW, err)
@@ -369,6 +378,21 @@ func (v *Validator) validatePoW(block types.Block) error {
 	hash := v.backend.Hash(header.EncodeForMining(), cx.NewUint64Nonce(header.Nonce), dag)
 	if !cx.LessOrEqualBE(hash.Pow256, header.Target) {
 		return fmt.Errorf("%w: pow=%s target=%s", ErrInvalidPoW, hex.EncodeToString(hash.Pow256[:]), header.Target.String())
+	}
+	return nil
+}
+
+func (v *Validator) validateDAGMerkleRoot(header types.BlockHeader) error {
+	dag, err := v.validationDAGForHeader(header)
+	if err != nil {
+		return err
+	}
+	return v.validateDAGMerkleRootWithRoot(header, v.merkleRootForDAG(header, dag))
+}
+
+func (v *Validator) validateDAGMerkleRootWithRoot(header types.BlockHeader, root [32]byte) error {
+	if root != [32]byte(header.DAGMerkleRoot) {
+		return fmt.Errorf("%w: dag merkle root mismatch", ErrInvalidPoW)
 	}
 	return nil
 }

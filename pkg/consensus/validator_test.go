@@ -352,6 +352,72 @@ func TestDAGMerkleRootStreamingMatchesMaterializedRoot(t *testing.T) {
 	}
 }
 
+func TestColossusXValidateBlockRejectsTamperedDAGMerkleRoot(t *testing.T) {
+	chainCfg, genesisCfg := colossusxTestConfig(t)
+	v, err := NewValidator(chainCfg, CPUBackend{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Close()
+	store := chain.NewMemoryStore()
+
+	genesis, _, err := v.SealBlock(types.NewGenesisBlock(genesisCfg), 2000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesis.Header.DAGMerkleRoot[0] ^= 0x01
+	if err := v.ValidateBlock(store, genesis); err == nil {
+		t.Fatal("expected validation error when DAG merkle root is tampered")
+	}
+}
+
+func TestColossusXValidateHeaderRejectsTamperedDAGMerkleRoot(t *testing.T) {
+	chainCfg, genesisCfg := colossusxTestConfig(t)
+	v, err := NewValidator(chainCfg, CPUBackend{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Close()
+	store := chain.NewMemoryStore()
+
+	genesis, _, err := v.SealBlock(types.NewGenesisBlock(genesisCfg), 2000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := v.ValidateHeader(store, genesis.Header); err != nil {
+		t.Fatalf("expected sealed header to validate: %v", err)
+	}
+	genesis.Header.DAGMerkleRoot[0] ^= 0x01
+	if err := v.ValidateHeader(store, genesis.Header); err == nil {
+		t.Fatal("expected header validation error when DAG merkle root is tampered")
+	}
+}
+
+func TestColossusXValidateBlockRejectsTamperedCompactProof(t *testing.T) {
+	chainCfg, genesisCfg := colossusxTestConfig(t)
+	v, err := NewValidator(chainCfg, CPUBackend{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Close()
+	store := chain.NewMemoryStore()
+
+	genesis, _, err := v.SealBlock(types.NewGenesisBlock(genesisCfg), 2000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if genesis.ColossusXSolutionCompact == nil {
+		t.Fatal("expected compact colossusx solution to be present")
+	}
+	if len(genesis.ColossusXSolutionCompact.Siblings) == 0 {
+		t.Fatal("expected compact proof siblings to be present")
+	}
+	genesis.ColossusXSolutionCompact.Siblings[0][0] ^= 0x01
+	if err := v.ValidateBlock(store, genesis); err == nil {
+		t.Fatal("expected validation error when compact merkle proof is tampered")
+	}
+}
+
 func TestSharedCacheKeyIgnoresAllocatorName(t *testing.T) {
 	chainCfg, genesisCfg := testConfig(t)
 	v, err := NewValidator(chainCfg, CPUBackend{}, 1)
