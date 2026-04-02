@@ -191,6 +191,38 @@ go run ./cmd/colossusx verify \
 
 ---
 
+
+## 2.6 Genesis template for multi-node P2P rollout
+
+A draft template for sharing one consistent genesis/network profile across many miners is included at:
+
+- `configs/genesis.p2p.example.json`
+
+Important: the current `daemon` implementation loads configuration from CLI flags, not from a genesis JSON file directly.
+Use the JSON as an ops/deployment source of truth and map it to daemon flags.
+
+Example mapping:
+
+```bash
+go run ./cmd/colossusx daemon \
+  -mode colossusx \
+  -network colossusx-mainnet-v1 \
+  -initial-dag-mib 32768 \
+  -dag-growth-mib-per-epoch 256 \
+  -genesis-message "Colossus-X mainnet genesis 2026-04-02" \
+  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+  -listen :30333 \
+  -bootnodes 198.51.100.10:30333,198.51.100.11:30333,198.51.100.12:30333
+```
+
+For block-sync P2P stability, all nodes must keep these values identical:
+
+- `-network`
+- `-genesis-message` (and deployment-time genesis timestamp policy)
+- `-target`
+- `-initial-dag-mib`
+- `-dag-growth-mib-per-epoch`
+
 ## 3. CLI flag reference
 
 ## 3-1. `daemon` flags
