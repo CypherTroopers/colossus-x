@@ -84,7 +84,7 @@ func ParseCLIConfig(args []string) (CLIConfig, error) {
 	fs.SetOutput(os.Stdout)
 
 	modeName := fs.String("mode", string(cx.ModeColossusX), "operating mode (colossusx only)")
-	backendName := fs.String("backend", string(BackendOpenCL), "mining backend: cuda, opencl, metal, cpu, unified, or gpu")
+	backendName := fs.String("backend", string(BackendOpenCL), "mining backend: auto, cuda, opencl, metal, cpu, unified, or gpu")
 	dagAlloc := fs.String("dag-alloc", "auto", "dag allocation strategy: auto, go-heap, pinned-host, cuda-managed, opencl-svm, metal-shared")
 	initialDAGMiB := fs.Uint64("initial-dag-mib", DefaultInitialDAGMiB, "initial DAG size in MiB")
 	dagMiB := fs.Uint64("dag-mib", 0, "deprecated alias for -initial-dag-mib")
@@ -221,6 +221,9 @@ func parseMode(s string) (cx.Mode, error) {
 }
 
 func ParseBackendMode(s string) (BackendMode, error) {
+	if s == "auto" {
+		return BackendUnified, nil
+	}
 	switch BackendMode(s) {
 	case BackendCPU, BackendCUDA, BackendOpenCL, BackendMetal, BackendUnified, BackendGPU:
 		return BackendMode(s), nil

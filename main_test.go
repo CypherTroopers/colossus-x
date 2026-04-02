@@ -7,7 +7,7 @@ import (
 )
 
 func TestParseBackendMode(t *testing.T) {
-	for _, mode := range []string{"unified", "cpu", "gpu"} {
+	for _, mode := range []string{"unified", "cpu", "gpu", "auto"} {
 		if _, err := ParseBackendMode(mode); err != nil {
 			t.Fatalf("ParseBackendMode(%q) returned error: %v", mode, err)
 		}
@@ -17,6 +17,15 @@ func TestParseBackendMode(t *testing.T) {
 	}
 }
 
+func TestParseBackendModeAutoMapsToUnified(t *testing.T) {
+	mode, err := ParseBackendMode("auto")
+	if err != nil {
+		t.Fatalf("ParseBackendMode(auto): %v", err)
+	}
+	if mode != BackendUnified {
+		t.Fatalf("expected auto to map to unified backend, got %q", mode)
+	}
+}
 func TestParseCLIConfigColossusXModeAllowsDynamicDAGProfile(t *testing.T) {
 	cfg, err := ParseCLIConfig([]string{"-mode", "colossusx"})
 	if err != nil {

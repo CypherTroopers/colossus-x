@@ -13,6 +13,16 @@ import (
 	"colossusx/pkg/types"
 )
 
+func TestParseDaemonFlagsAutoBackendMapsToUnified(t *testing.T) {
+	cfg, err := parseDaemonFlags([]string{"-miner-backend=auto"})
+	if err != nil {
+		t.Fatalf("expected auto backend to parse, got err=%v", err)
+	}
+	if cfg.MinerBackend != "unified" {
+		t.Fatalf("expected auto backend to resolve to unified, got %q", cfg.MinerBackend)
+	}
+}
+
 func TestParseDaemonFlagsAllowsCPUBackendInColossusXProduction(t *testing.T) {
 	cfg, err := parseDaemonFlags([]string{"-miner-backend=cpu", "-miner-dag-alloc=go-heap"})
 	if err != nil {
