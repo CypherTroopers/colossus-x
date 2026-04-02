@@ -56,7 +56,7 @@ func buildColossusXV2SeedCache(seed []byte, entries int) [][64]byte {
 	return cache
 }
 
-func colossusXNode(index uint64, nodeSize uint64, cache [][64]byte) []byte {
+func colossusXNodeInto(index uint64, out []byte, cache [][64]byte) {
 	seed := cache[index%uint64(len(cache))]
 	var idx [8]byte
 	binary.LittleEndian.PutUint64(idx[:], index)
@@ -78,8 +78,12 @@ func colossusXNode(index uint64, nodeSize uint64, cache [][64]byte) []byte {
 	keyed, _ := blake3.NewKeyed(mix[:32])
 	_, _ = keyed.Write(mix[:])
 	_, _ = keyed.Write(idx[:])
-	out := make([]byte, nodeSize)
 	_, _ = keyed.Digest().Read(out)
+}
+
+func colossusXNode(index uint64, nodeSize uint64, cache [][64]byte) []byte {
+	out := make([]byte, nodeSize)
+	colossusXNodeInto(index, out, cache)
 	return out
 }
 
@@ -108,7 +112,7 @@ func generateColossusXV2DAG(spec Spec, dag []byte, epochSeed []byte, workers int
 			defer wg.Done()
 			for i := from; i < to; i++ {
 				off := i * spec.NodeSize
-				copy(dag[off:off+spec.NodeSize], colossusXNode(i, spec.NodeSize, cache))
+				colossusXNodeInto(i, dag[off:off+spec.NodeSize], cache)
 				if done != nil {
 					done()
 				}
