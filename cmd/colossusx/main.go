@@ -97,8 +97,16 @@ type daemonConfig struct {
 	Bootnodes     []string
 	NodeID        string
 	MinerBackend  miner.BackendMode
+	AutoBackend   bool
 	MinerDAGAlloc string
 }
+
+const (
+	daemonAutoBenchmarkDAGBytes uint64 = 64 * 1024 * 1024
+	daemonAutoBenchmarkNonces   uint64 = 4096
+)
+
+var daemonAutoBenchmarkHeader = []byte("colossusx-daemon-auto-backend-benchmark")
 
 func runDaemon(args []string) error {
 	cfg, err := parseDaemonFlags(args)
@@ -136,7 +144,7 @@ func runDaemon(args []string) error {
 		NodeID:             cfg.NodeID,
 		ListenAddr:         cfg.ListenAddr,
 		Bootnodes:          cfg.Bootnodes,
-		MinerBackend:       string(cfg.MinerBackend),
+		MinerBackend:       string(miningBackend.Mode()),
 		MinerDAGAlloc:      cfg.MinerDAGAlloc,
 		ResolvedDAGAlloc:   strategy.Name(),
 		RuntimeInitStatus:  runtimeStatus,
@@ -149,7 +157,7 @@ func runDaemon(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	fmt.Printf("colossusx daemon starting network=%s mode=%s initial_dag=%dMiB dag_growth=%dMiB/epoch workers=%d mine=%t datadir=%s listen=%s bootnodes=%d node_id=%s miner_backend=%s miner_dag_alloc=%s resolved_alloc=%s runtime_init=%s execution=%s\n", cfg.Chain.NetworkID, cfg.Chain.Spec.Mode, cfg.Chain.Spec.InitialDAGSizeBytes/(1024*1024), cfg.Chain.Spec.DAGGrowthBytesPerEpoch/(1024*1024), cfg.Workers, cfg.Mine, cfg.DataDir, cfg.ListenAddr, len(cfg.Bootnodes), cfg.NodeID, cfg.MinerBackend, cfg.MinerDAGAlloc, strategy.Name(), runtimeStatus, miningBackend.Description())
+	fmt.Printf("colossusx daemon starting network=%s mode=%s initial_dag=%dMiB dag_growth=%dMiB/epoch workers=%d mine=%t datadir=%s listen=%s bootnodes=%d node_id=%s miner_backend=%s miner_dag_alloc=%s resolved_alloc=%s runtime_init=%s execution=%s\n", cfg.Chain.NetworkID, cfg.Chain.Spec.Mode, cfg.Chain.Spec.InitialDAGSizeBytes/(1024*1024), cfg.Chain.Spec.DAGGrowthBytesPerEpoch/(1024*1024), cfg.Workers, cfg.Mine, cfg.DataDir, cfg.ListenAddr, len(cfg.Bootnodes), cfg.NodeID, miningBackend.Mode(), cfg.MinerDAGAlloc, strategy.Name(), runtimeStatus, miningBackend.Description())
 	if err := n.Run(ctx); err != nil && err != context.Canceled {
 		return err
 	}
@@ -202,6 +210,7 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 	if err := spec.Validate(); err != nil {
 		return daemonConfig{}, err
 	}
+	autoBackend := strings.EqualFold(strings.TrimSpace(*minerBackend), "auto")
 	backendMode, err := miner.ParseBackendMode(*minerBackend)
 	if err != nil {
 		return daemonConfig{}, err
@@ -225,10 +234,18 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 		Spec:      spec,
 		ExtraData: fmt.Sprintf("mode=%s", spec.Mode),
 	}
-	return daemonConfig{Chain: chainCfg, Genesis: genesis, Mine: *mine, Workers: *workers, MaxNonces: *maxNonces, BlockTime: *blockTime, DataDir: *dataDir, ListenAddr: *listenAddr, Bootnodes: node.ParseBootnodes(*bootnodes), NodeID: *nodeID, MinerBackend: backendMode, MinerDAGAlloc: *minerDAGAlloc}, nil
+	return daemonConfig{Chain: chainCfg, Genesis: genesis, Mine: *mine, Workers: *workers, MaxNonces: *maxNonces, BlockTime: *blockTime, DataDir: *dataDir, ListenAddr: *listenAddr, Bootnodes: node.ParseBootnodes(*bootnodes), NodeID: *nodeID, MinerBackend: backendMode, AutoBackend: autoBackend, MinerDAGAlloc: *minerDAGAlloc}, nil
 }
 
 func initializeMining(cfg daemonConfig) (cx.HashBackend, miner.MemoryStrategy, string, error) {
+	if cfg.AutoBackend {
+		mode, rate, err := benchmarkDaemonBackends(cfg)
+		if err != nil {
+			return nil, nil, "failed", err
+		}
+		fmt.Printf("daemon startup auto backend benchmark selected: %s (%.2f H/s, nonces=%d)\n", mode, rate, daemonAutoBenchmarkNonces)
+		cfg.MinerBackend = mode
+	}
 	backend, err := miner.NewBackend(cfg.MinerBackend)
 	if err != nil {
 		return nil, nil, "failed", err
@@ -244,6 +261,79 @@ func initializeMining(cfg daemonConfig) (cx.HashBackend, miner.MemoryStrategy, s
 	}
 	return backend, strategy, status, nil
 }
+
+func benchmarkDaemonBackends(cfg daemonConfig) (miner.BackendMode, float64, error) {
+	benchmarkSpec := cfg.Chain.Spec
+	if benchmarkSpec.NodeSize == 0 {
+		benchmarkSpec.NodeSize = cx.ColossusXNodeSize
+	}
+	maxDAG := daemonAutoBenchmarkDAGBytes - (daemonAutoBenchmarkDAGBytes % benchmarkSpec.NodeSize)
+	if maxDAG == 0 {
+		maxDAG = benchmarkSpec.NodeSize
+	}
+	initial := benchmarkSpec.InitialDAGSizeBytes
+	if initial == 0 {
+		initial = benchmarkSpec.DAGSizeBytes
+	}
+	if initial == 0 || initial > maxDAG {
+		benchmarkSpec.InitialDAGSizeBytes = maxDAG
+		benchmarkSpec.DAGSizeBytes = maxDAG
+	}
+
+	dag, err := cx.NewDAGWithAllocator(benchmarkSpec, miner.GoHeapMemory{})
+	if err != nil {
+		return "", 0, err
+	}
+	defer dag.Close()
+
+	seed := types.EpochSeedForHeight(benchmarkSpec, 0)
+	if err := cx.PopulateDAG(dag, seed[:], cfg.Workers); err != nil {
+		return "", 0, err
+	}
+
+	candidates := []miner.BackendMode{
+		miner.BackendCUDA,
+		miner.BackendMetal,
+		miner.BackendOpenCL,
+		miner.BackendUnified,
+		miner.BackendCPU,
+	}
+	var (
+		bestMode miner.BackendMode
+		bestRate float64
+		found    bool
+	)
+	for _, mode := range candidates {
+		backend, err := miner.NewBackend(mode)
+		if err != nil {
+			continue
+		}
+		if _, err := miner.InitializeBackendRuntime(backend); err != nil {
+			continue
+		}
+		if err := backend.Prepare(dag); err != nil {
+			continue
+		}
+		m, err := cx.NewMiner(benchmarkSpec, dag, cfg.Workers, daemonSkipPrepareBackend{backend})
+		if err != nil {
+			continue
+		}
+		rate := cx.Benchmark(m, daemonAutoBenchmarkHeader, cx.NewUint64Nonce(0), daemonAutoBenchmarkNonces).HashRate
+		if !found || rate > bestRate {
+			found = true
+			bestRate = rate
+			bestMode = mode
+		}
+	}
+	if !found {
+		return "", 0, fmt.Errorf("auto backend benchmark failed: no candidate backend could be initialized")
+	}
+	return bestMode, bestRate, nil
+}
+
+type daemonSkipPrepareBackend struct{ cx.HashBackend }
+
+func (b daemonSkipPrepareBackend) Prepare(*cx.DAG) error { return nil }
 
 type runtimeCapabilityView interface {
 	CUDADeviceOrdinal() (int, bool)
