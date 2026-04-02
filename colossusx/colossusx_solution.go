@@ -91,6 +91,60 @@ func BuildColossusXSolutionWithProver(spec Spec, header []byte, nonce uint64, da
 	return out, root, nil
 }
 
+func BuildColossusXSolutionStreaming(spec Spec, header []byte, nonce uint64, dag DAGAccessor) (ColossusXSolution, [32]byte, error) {
+	if dag == nil || dag.NodeCount() == 0 {
+		return ColossusXSolution{}, [32]byte{}, errors.New("dag is empty")
+	}
+	trace := ColossusXTraceHash(spec, header, NewUint64Nonce(nonce), dag)
+	auditIdx := ColossusXAuditIndicesFromSolutionHash(trace.SolutionHash, dag.NodeCount(), ColossusXAuditCellCount)
+	needed := make([]uint64, 0, len(trace.Accessed)+len(auditIdx))
+	seen := make(map[uint64]struct{}, len(trace.Accessed)+len(auditIdx))
+	for _, idx := range trace.Accessed {
+		key := uint64(idx)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		needed = append(needed, key)
+	}
+	for _, idx := range auditIdx {
+		if _, ok := seen[idx]; ok {
+			continue
+		}
+		seen[idx] = struct{}{}
+		needed = append(needed, idx)
+	}
+	root, proofs, err := BuildMerkleMultiProofFromAccessor(dag, spec.NodeSize, needed)
+	if err != nil {
+		return ColossusXSolution{}, [32]byte{}, err
+	}
+	out := ColossusXSolution{
+		Nonce:       nonce,
+		MixDigest:   trace.MixDigest,
+		MiningCells: make([]SolutionCell, 0, len(trace.Accessed)),
+		AuditCells:  make([]SolutionCell, 0, ColossusXAuditCellCount),
+	}
+	for _, idx := range trace.Accessed {
+		cell := make([]byte, spec.NodeSize)
+		dag.ReadNode(uint64(idx), cell)
+		out.MiningCells = append(out.MiningCells, SolutionCell{
+			Index: idx,
+			Data:  cell,
+			Proof: append(MerkleProof(nil), proofs[uint64(idx)]...),
+		})
+	}
+	for _, idx := range auditIdx {
+		cell := make([]byte, spec.NodeSize)
+		dag.ReadNode(idx, cell)
+		out.AuditCells = append(out.AuditCells, SolutionCell{
+			Index: uint32(idx),
+			Data:  cell,
+			Proof: append(MerkleProof(nil), proofs[idx]...),
+		})
+	}
+	return out, root, nil
+}
+
 func VerifyColossusXSolution(spec Spec, header []byte, target Target, merkleRoot [32]byte, solution ColossusXSolution) error {
 	initialInput := append([]byte{}, header...)
 	var nonceLE [8]byte
