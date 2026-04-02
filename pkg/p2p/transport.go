@@ -19,6 +19,10 @@ type Handlers struct {
 	OnPing             func(*Peer, PingMessage)
 	OnPong             func(*Peer, PongMessage)
 	OnNewBlock         func(*Peer, NewBlockMessage)
+	OnGetHeaders       func(*Peer, GetHeadersMessage)
+	OnHeaders          func(*Peer, HeadersMessage)
+	OnGetBlocks        func(*Peer, GetBlocksMessage)
+	OnBlocks           func(*Peer, BlocksMessage)
 }
 
 type Config struct {
@@ -204,6 +208,42 @@ func (s *Server) dispatch(peer *Peer, msg Message) error {
 		}
 		if s.cfg.Handlers.OnNewBlock != nil {
 			s.cfg.Handlers.OnNewBlock(peer, body)
+		}
+		return nil
+	case MessageGetHeaders:
+		var body GetHeadersMessage
+		if err := json.Unmarshal(payload, &body); err != nil {
+			return err
+		}
+		if s.cfg.Handlers.OnGetHeaders != nil {
+			s.cfg.Handlers.OnGetHeaders(peer, body)
+		}
+		return nil
+	case MessageHeaders:
+		var body HeadersMessage
+		if err := json.Unmarshal(payload, &body); err != nil {
+			return err
+		}
+		if s.cfg.Handlers.OnHeaders != nil {
+			s.cfg.Handlers.OnHeaders(peer, body)
+		}
+		return nil
+	case MessageGetBlocks:
+		var body GetBlocksMessage
+		if err := json.Unmarshal(payload, &body); err != nil {
+			return err
+		}
+		if s.cfg.Handlers.OnGetBlocks != nil {
+			s.cfg.Handlers.OnGetBlocks(peer, body)
+		}
+		return nil
+	case MessageBlocks:
+		var body BlocksMessage
+		if err := json.Unmarshal(payload, &body); err != nil {
+			return err
+		}
+		if s.cfg.Handlers.OnBlocks != nil {
+			s.cfg.Handlers.OnBlocks(peer, body)
 		}
 		return nil
 	default:
