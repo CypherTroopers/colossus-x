@@ -69,7 +69,7 @@ go run ./cmd/colossusx daemon \
   -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
   -mine=true \
   -workers 16 \
-  -miner-backend unified \
+  -miner-backend auto \
   -miner-dag-alloc auto
 ```
 
@@ -148,7 +148,7 @@ go run ./cmd/colossusx daemon \
   -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
   -node-id node-01 \
   -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
-  -miner-backend unified \
+  -miner-backend auto \
   -miner-dag-alloc auto
 ```
 
@@ -170,7 +170,7 @@ go run ./cmd/colossusx daemon \
   -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
   -node-id node-01 \
   -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
-  -miner-backend unified \
+  -miner-backend auto \
   -miner-dag-alloc auto
 ```
 
