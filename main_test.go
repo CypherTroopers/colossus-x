@@ -7,13 +7,72 @@ import (
 )
 
 func TestParseBackendMode(t *testing.T) {
-	for _, mode := range []string{"unified", "cpu", "gpu"} {
+	for _, mode := range []string{"unified", "cpu", "gpu", "auto"} {
 		if _, err := ParseBackendMode(mode); err != nil {
 			t.Fatalf("ParseBackendMode(%q) returned error: %v", mode, err)
 		}
 	}
 	if _, err := ParseBackendMode("bogus"); err == nil {
 		t.Fatal("expected invalid backend to fail")
+	}
+}
+
+func TestParseBackendModeAutoMapsToUnified(t *testing.T) {
+	restore := setAutoBackendProbesForTest(false, false, false)
+	defer restore()
+
+	got, err := ParseBackendMode("auto")
+	if err != nil {
+		t.Fatalf("ParseBackendMode(auto) returned error: %v", err)
+	}
+	if got != BackendUnified {
+		t.Fatalf("expected auto backend to resolve to %q, got %q", BackendUnified, got)
+	}
+}
+
+func TestParseBackendModeAutoPrefersCUDAThenMetalThenOpenCL(t *testing.T) {
+	tests := []struct {
+		name   string
+		cuda   bool
+		metal  bool
+		opencl bool
+		want   BackendMode
+	}{
+		{name: "cuda-first", cuda: true, metal: true, opencl: true, want: BackendCUDA},
+		{name: "metal-second", cuda: false, metal: true, opencl: true, want: BackendMetal},
+		{name: "opencl-third", cuda: false, metal: false, opencl: true, want: BackendOpenCL},
+		{name: "fallback-unified", cuda: false, metal: false, opencl: false, want: BackendUnified},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			restore := setAutoBackendProbesForTest(tc.cuda, tc.metal, tc.opencl)
+			defer restore()
+
+			got, err := ParseBackendMode("auto")
+			if err != nil {
+				t.Fatalf("ParseBackendMode(auto) returned error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
+func setAutoBackendProbesForTest(cuda, metal, opencl bool) func() {
+	prevCUDA := autoBackendCUDAProbe
+	prevMetal := autoBackendMetalProbe
+	prevOpenCL := autoBackendOpenCLProbe
+
+	autoBackendCUDAProbe = func() bool { return cuda }
+	autoBackendMetalProbe = func() bool { return metal }
+	autoBackendOpenCLProbe = func() bool { return opencl }
+
+	return func() {
+		autoBackendCUDAProbe = prevCUDA
+		autoBackendMetalProbe = prevMetal
+		autoBackendOpenCLProbe = prevOpenCL
 	}
 }
 

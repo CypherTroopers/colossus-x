@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	miner "colossusx"
 	cx "colossusx/colossusx"
 	"colossusx/pkg/consensus"
 	"colossusx/pkg/types"
@@ -19,6 +20,20 @@ func TestParseDaemonFlagsAllowsCPUBackendInColossusXProduction(t *testing.T) {
 	}
 	if cfg.MinerBackend != "cpu" {
 		t.Fatalf("expected cpu miner backend, got %q", cfg.MinerBackend)
+	}
+}
+
+func TestParseDaemonFlagsAutoBackendUsesAutoResolution(t *testing.T) {
+	cfg, err := parseDaemonFlags([]string{"-miner-backend=auto"})
+	if err != nil {
+		t.Fatalf("expected auto backend to parse, got err=%v", err)
+	}
+	want, err := miner.ParseBackendMode("auto")
+	if err != nil {
+		t.Fatalf("ParseBackendMode(auto): %v", err)
+	}
+	if cfg.MinerBackend != want {
+		t.Fatalf("expected auto backend to resolve to %q, got %q", want, cfg.MinerBackend)
 	}
 }
 

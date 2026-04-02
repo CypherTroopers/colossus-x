@@ -47,6 +47,27 @@ type runtimeBackend interface {
 	InitializeRuntime() error
 }
 
+var (
+	autoBackendCUDAProbe = func() bool {
+		_, err := currentCUDADeviceOrdinal()
+		return err == nil
+	}
+	autoBackendOpenCLProbe = func() bool {
+		rt := newOpenCLRuntime()
+		if rt == nil {
+			return false
+		}
+		if err := rt.Initialize(); err != nil {
+			return false
+		}
+		_, ok := rt.OpenCLContext()
+		return ok
+	}
+	autoBackendMetalProbe = func() bool {
+		return runtime.GOOS == "darwin"
+	}
+)
+
 type CLIConfig struct {
 	Mode       cx.Mode
 	Backend    BackendMode
@@ -84,7 +105,7 @@ func ParseCLIConfig(args []string) (CLIConfig, error) {
 	fs.SetOutput(os.Stdout)
 
 	modeName := fs.String("mode", string(cx.ModeColossusX), "operating mode (colossusx only)")
-	backendName := fs.String("backend", string(BackendOpenCL), "mining backend: cuda, opencl, metal, cpu, unified, or gpu")
+	backendName := fs.String("backend", string(BackendOpenCL), "mining backend: auto, cuda, opencl, metal, cpu, unified, or gpu (auto selects best available)")
 	dagAlloc := fs.String("dag-alloc", "auto", "dag allocation strategy: auto, go-heap, pinned-host, cuda-managed, opencl-svm, metal-shared")
 	initialDAGMiB := fs.Uint64("initial-dag-mib", DefaultInitialDAGMiB, "initial DAG size in MiB")
 	dagMiB := fs.Uint64("dag-mib", 0, "deprecated alias for -initial-dag-mib")
@@ -221,12 +242,29 @@ func parseMode(s string) (cx.Mode, error) {
 }
 
 func ParseBackendMode(s string) (BackendMode, error) {
+	if s == "auto" {
+		return resolveAutoBackendMode(), nil
+	}
+
 	switch BackendMode(s) {
 	case BackendCPU, BackendCUDA, BackendOpenCL, BackendMetal, BackendUnified, BackendGPU:
 		return BackendMode(s), nil
 	default:
 		return "", fmt.Errorf("unsupported backend %q", s)
 	}
+}
+
+func resolveAutoBackendMode() BackendMode {
+	if autoBackendCUDAProbe() {
+		return BackendCUDA
+	}
+	if autoBackendMetalProbe() {
+		return BackendMetal
+	}
+	if autoBackendOpenCLProbe() {
+		return BackendOpenCL
+	}
+	return BackendUnified
 }
 
 func NewBackend(mode BackendMode) (HashBackend, error) {
