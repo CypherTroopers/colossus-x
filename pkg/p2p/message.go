@@ -8,11 +8,15 @@ type Message struct {
 }
 
 const (
-	MessageHello  = "hello"
-	MessageStatus = "status"
-	MessagePing   = "ping"
-	MessagePong   = "pong"
-	MessageNewBlk = "newblock"
+	MessageHello      = "hello"
+	MessageStatus     = "status"
+	MessagePing       = "ping"
+	MessagePong       = "pong"
+	MessageNewBlk     = "newblock"
+	MessageGetHeaders = "getheaders"
+	MessageHeaders    = "headers"
+	MessageGetBlocks  = "getblocks"
+	MessageBlocks     = "blocks"
 )
 
 type HelloMessage struct {
@@ -36,4 +40,21 @@ type PongMessage struct {
 
 type NewBlockMessage struct {
 	Block types.Block `json:"block"`
+}
+
+type GetHeadersMessage struct {
+	FromHeight uint64 `json:"from_height"`
+	Limit      uint64 `json:"limit"`
+}
+
+type HeadersMessage struct {
+	Headers []types.BlockHeader `json:"headers"`
+}
+
+type GetBlocksMessage struct {
+	Hashes []types.Hash `json:"hashes"`
+}
+
+type BlocksMessage struct {
+	Blocks []types.Block `json:"blocks"`
 }
