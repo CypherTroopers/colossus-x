@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "description": "Colossus-X P2P genesis draft for multi-node mining participation",
+  "chain": {
+    "network_id": "colossusx-mainnet-v1",
+    "mode": "colossusx"
+  },
+  "genesis": {
+    "chain_id": "colossusx-mainnet-v1",
+    "message": "Colossus-X mainnet genesis 2026-04-02",
+    "timestamp": 1775097600,
+    "target": "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "extra_data": "mode=colossusx; rollout=p2p-block-sync-v1"
+  },
+  "spec": {
+    "algorithm_version": 2,
+    "initial_dag_mib": 32768,
+    "dag_growth_mib_per_epoch": 256,
+    "epoch_blocks": 7200,
+    "node_size_bytes": 256,
+    "reads_per_hash": 128,
+    "round_commit_interval": 8,
+    "genesis_hash_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "p2p": {
+    "listen_port": 30333,
+    "bootnodes": [
+      "198.51.100.10:30333",
+      "198.51.100.11:30333",
+      "198.51.100.12:30333"
+    ],
+    "recommended_min_bootnodes": 3
+  },
+  "notes": [
+    "All nodes must share network_id, genesis fields, and spec fields exactly.",
+    "This file is a deployment template. Current daemon CLI reads flags, so convert values to flags at startup."
+  ]
+}
