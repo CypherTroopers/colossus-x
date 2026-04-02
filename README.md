@@ -34,9 +34,9 @@ make --version
 # Download dependencies
 go mod download
 
-# Build binary
+# Build subcommand CLI binary (mine/daemon/verify)
 mkdir -p bin
-go build -o bin/colossusx .
+go build -o bin/colossusx ./cmd/colossusx
 ```
 
 Using `make`:
@@ -107,8 +107,8 @@ go run ./cmd/colossusx mine \
   -mode colossusx \
   -backend unified \
   -dag-alloc auto \
-  -initial-dag-mib 1024 \
-  -dag-growth-mib-per-epoch 8 \
+  -initial-dag-mib 32768 \
+  -dag-growth-mib-per-epoch 256 \
   -workers 16 \
   -header 0000000000000000000000000000000000000000000000000000000000000000 \
   -epoch-seed 0000000000000000000000000000000000000000000000000000000000000000 \
@@ -136,8 +136,8 @@ Full example with major flags:
 go run ./cmd/colossusx daemon \
   -mode colossusx \
   -network mainnet \
-  -initial-dag-mib 1024 \
-  -dag-growth-mib-per-epoch 8 \
+  -initial-dag-mib 32768 \
+  -dag-growth-mib-per-epoch 256 \
   -mine=true \
   -workers 16 \
   -max-nonces 500000 \
@@ -158,8 +158,8 @@ Verification/relay node example (mining disabled):
 go run ./cmd/colossusx daemon \
   -mode colossusx \
   -network mainnet \
-  -initial-dag-mib 1024 \
-  -dag-growth-mib-per-epoch 8 \
+  -initial-dag-mib 32768 \
+  -dag-growth-mib-per-epoch 256 \
   -no-mine \
   -workers 16 \
   -max-nonces 500000 \
@@ -176,27 +176,18 @@ go run ./cmd/colossusx daemon \
 
 ### 2.5-3. `verify` (PoW validation)
 
-Header validation:
+Block validation (ColossusX v2):
 
 ```bash
 go run ./cmd/colossusx verify \
   -mode colossusx \
-  -header ./examples/header.json \
-  -initial-dag-mib 1024 \
-  -dag-growth-mib-per-epoch 8
+  -block ./path/to/block.json \
+  -initial-dag-mib 32768 \
+  -dag-growth-mib-per-epoch 256
 ```
 
-Block validation:
-
-```bash
-go run ./cmd/colossusx verify \
-  -mode colossusx \
-  -block ./examples/block.json \
-  -initial-dag-mib 1024 \
-  -dag-growth-mib-per-epoch 8
-```
-
-> `verify` does not allow using `-header` and `-block` together. Choose exactly one.
+> `verify` does not allow using `-header` and `-block` together.  
+> In `colossusx` mode (algorithm v2), verification requires `-block` because solution fields are block-level.
 
 ---
 
@@ -208,9 +199,9 @@ go run ./cmd/colossusx verify \
 |---|---:|---|
 | `-mode` | `colossusx` | Chain mode. Currently only `colossusx`. |
 | `-network` | `devnet` | Network identifier (similar to chain ID). |
-| `-initial-dag-mib` | `1024` | Initial DAG size (MiB). |
+| `-initial-dag-mib` | `32768` | Initial DAG size (MiB). |
 | `-dag-mib` | `0` | Deprecated alias for `-initial-dag-mib`; overrides when non-zero. |
-| `-dag-growth-mib-per-epoch` | `8` | DAG growth per epoch (MiB). |
+| `-dag-growth-mib-per-epoch` | `256` | DAG growth per epoch (MiB). |
 | `-mine` | `true` | Enable local mining. |
 | `-no-mine` | `false` | Disable local mining (equivalent to `-mine=false`). |
 | `-workers` | `runtime.NumCPU()` | Number of mining workers. |
@@ -234,9 +225,9 @@ In `colossusx` production-like mode, `backend` and `dag-alloc` combinations are 
 | `-mode` | `colossusx` | Runtime mode (only `colossusx`). |
 | `-backend` | `opencl` | `auto/cuda/opencl/metal/cpu/unified/gpu` (`auto` chooses `cuda`→`metal`→`opencl`→`unified`). |
 | `-dag-alloc` | `auto` | DAG allocation strategy. |
-| `-initial-dag-mib` | `1024` | Initial DAG size (MiB). |
+| `-initial-dag-mib` | `32768` | Initial DAG size (MiB). |
 | `-dag-mib` | `0` | Deprecated alias of `-initial-dag-mib`. |
-| `-dag-growth-mib-per-epoch` | `8` | DAG growth (MiB/epoch). |
+| `-dag-growth-mib-per-epoch` | `256` | DAG growth (MiB/epoch). |
 | `-workers` | `runtime.NumCPU()` | Worker count. |
 | `-header` | fixed test value | Mining input header (hex). |
 | `-epoch-seed` | fixed test value | Epoch seed (hex). |
@@ -252,11 +243,12 @@ In `colossusx` production-like mode, `backend` and `dag-alloc` combinations are 
 | `-mode` | `colossusx` | Validation mode (only `colossusx`). |
 | `-header` | `""` | `types.BlockHeader` JSON path. |
 | `-block` | `""` | `types.Block` JSON path. |
-| `-initial-dag-mib` | `1024` | Initial DAG size. |
+| `-initial-dag-mib` | `32768` | Initial DAG size. |
 | `-dag-mib` | `0` | Deprecated alias for `-initial-dag-mib`. |
-| `-dag-growth-mib-per-epoch` | `8` | DAG growth value. |
+| `-dag-growth-mib-per-epoch` | `256` | DAG growth value. |
 
-`verify` requires exactly one of `--header` or `--block`; using both is invalid.
+`verify` requires exactly one of `--header` or `--block`; using both is invalid.  
+In `colossusx` mode, `--header` only is rejected and `--block` is required.
 
 ---
 
@@ -364,21 +356,21 @@ This structure allows consistent PoW semantics while switching computation and m
 `verify` is intended for offline or pipeline-integrated PoW validation from JSON artifacts.
 
 > **Current ColossusX behavior (important):**
-> - The `cmd/colossusx verify` path currently calls `VerifyHeaderStateless`, and stateless verification is disabled for ColossusX v2.
+> - In `colossusx` mode (algorithm v2), `cmd/colossusx verify` requires `--block` and validates `colossusx_solution` (or `colossusx_solution_compact`) plus `dag_merkle_root`.
+> - `--header`-only validation is available only for non-v2/legacy paths.
 > - Full block validation in `pkg/consensus/validator.go` reconstructs and caches the epoch DAG locally before verifying the ColossusX solution and DAG Merkle root.
-> - In other words, the production validator is **not** a "no local DAG allocation" verifier at this time.
 
-- **Header mode** (`-header path/to/header.json`)
-  - Loads a `types.BlockHeader` JSON object.
-  - Reconstructs required epoch/DAG context from header fields and verification flags.
-  - Recomputes PoW result and checks it against the target.
-
-- **Block mode** (`-block path/to/block.json`)
+- **Block mode** (`-block path/to/block.json`) for ColossusX v2
   - Loads a full `types.Block` JSON object.
-  - Extracts header and validates PoW exactly as in header mode.
+  - Extracts header and validates the ColossusX solution against target and DAG Merkle root.
+
+- **Header mode** (`-header path/to/header.json`) for legacy/non-v2 flows
+  - Loads a `types.BlockHeader` JSON object.
+  - Performs stateless header PoW verification.
 
 - **Validation rules**
   - Exactly one of `-header` or `-block` must be specified.
+  - In `colossusx` mode, `-block` is mandatory.
   - DAG sizing flags (`-initial-dag-mib`, `-dag-growth-mib-per-epoch`) must match the chain configuration used to produce the data.
   - When transaction proofs are provided by tooling or APIs, Merkle proof paths should reconstruct the header Merkle root exactly.
 
