@@ -41,6 +41,8 @@ func run(args []string) error {
 		return miner.Main(rest)
 	case "daemon":
 		return runDaemon(rest)
+	case "init":
+		return runInit(rest)
 	case "verify":
 		return runVerify(rest)
 	default:
@@ -63,6 +65,8 @@ func resolveCommand(args []string) (string, []string) {
 		return "mine", args[1:]
 	case "daemon", "node":
 		return "daemon", args[1:]
+	case "init":
+		return "init", args[1:]
 	case "verify":
 		return "verify", args[1:]
 	default:
@@ -77,12 +81,149 @@ func printTopLevelUsage() {
 	fmt.Println("  colossusx [mine flags]")
 	fmt.Println("  colossusx mine [flags]")
 	fmt.Println("  colossusx daemon [flags]")
+	fmt.Println("  colossusx init [flags]")
 	fmt.Println("  colossusx verify [flags]")
 	fmt.Println("")
 	fmt.Println("Subcommands:")
 	fmt.Println("  mine    run miner (default command)")
 	fmt.Println("  daemon  run node/daemon (alias: node)")
+	fmt.Println("  init    initialize datadir from genesis profile JSON")
 	fmt.Println("  verify  verify PoW for header/block JSON")
+}
+
+type genesisProfile struct {
+	Chain struct {
+		NetworkID string `json:"network_id"`
+		Mode      string `json:"mode"`
+	} `json:"chain"`
+	Genesis struct {
+		ChainID   string `json:"chain_id"`
+		Message   string `json:"message"`
+		Timestamp int64  `json:"timestamp"`
+		Target    string `json:"target"`
+		ExtraData string `json:"extra_data"`
+	} `json:"genesis"`
+	Spec struct {
+		AlgorithmVersion  uint32 `json:"algorithm_version"`
+		InitialDAGMiB     uint64 `json:"initial_dag_mib"`
+		DAGGrowthMiB      uint64 `json:"dag_growth_mib_per_epoch"`
+		EpochBlocks       uint64 `json:"epoch_blocks"`
+		NodeSizeBytes     uint64 `json:"node_size_bytes"`
+		ReadsPerHash      uint64 `json:"reads_per_hash"`
+		RoundCommitPeriod uint32 `json:"round_commit_interval"`
+	} `json:"spec"`
+}
+
+func runInit(args []string) error {
+	fs := flag.NewFlagSet("colossusx init", flag.ContinueOnError)
+	profilePath := fs.String("genesis-json", "", "path to genesis profile JSON")
+	dataDir := fs.String("datadir", filepath.Join(".", "data"), "node data directory")
+	maxNonces := fs.Uint64("max-nonces", 1_000_000, "maximum nonce range used while sealing genesis block")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*profilePath) == "" {
+		return errors.New("colossusx init requires -genesis-json")
+	}
+	if strings.TrimSpace(*dataDir) == "" {
+		return errors.New("colossusx init requires -datadir")
+	}
+
+	profile, chainCfg, genesisCfg, err := loadGenesisProfile(*profilePath)
+	if err != nil {
+		return err
+	}
+	store, err := chain.NewDiskStore(*dataDir)
+	if err != nil {
+		return err
+	}
+	if _, _, err := store.CurrentTip(); err == nil {
+		return fmt.Errorf("datadir %s already initialized", *dataDir)
+	}
+	validator, err := consensus.NewValidator(chainCfg, consensus.CPUBackend{}, 1)
+	if err != nil {
+		return err
+	}
+	defer validator.Close()
+
+	genesisBlock := types.NewGenesisBlock(genesisCfg)
+	sealed, _, err := validator.SealBlock(genesisBlock, *maxNonces)
+	if err != nil {
+		return fmt.Errorf("seal genesis: %w", err)
+	}
+	work := consensus.CalcBlockWork(sealed.Header.Target)
+	if err := store.StoreBlock(sealed, work); err != nil {
+		return err
+	}
+	if err := store.SetCurrentTip(sealed.BlockHash()); err != nil {
+		return err
+	}
+	fmt.Printf("initialized datadir=%s network=%s genesis_hash=%s timestamp=%d\n", *dataDir, chainCfg.NetworkID, sealed.BlockHash().String(), profile.Genesis.Timestamp)
+	return nil
+}
+
+func loadGenesisProfile(path string) (genesisProfile, types.ChainConfig, types.GenesisConfig, error) {
+	var profile genesisProfile
+	if err := readJSONFile(path, &profile); err != nil {
+		return genesisProfile{}, types.ChainConfig{}, types.GenesisConfig{}, err
+	}
+	if strings.TrimSpace(profile.Chain.NetworkID) == "" {
+		return genesisProfile{}, types.ChainConfig{}, types.GenesisConfig{}, errors.New("genesis profile: chain.network_id is required")
+	}
+	mode := cx.Mode(strings.TrimSpace(profile.Chain.Mode))
+	if mode == "" {
+		mode = cx.ModeColossusX
+	}
+	if mode != cx.ModeColossusX {
+		return genesisProfile{}, types.ChainConfig{}, types.GenesisConfig{}, fmt.Errorf("genesis profile: unsupported chain.mode %q", profile.Chain.Mode)
+	}
+	spec := cx.ColossusXSpec()
+	if profile.Spec.AlgorithmVersion != 0 {
+		spec.AlgorithmVersion = profile.Spec.AlgorithmVersion
+	}
+	if profile.Spec.InitialDAGMiB != 0 {
+		spec.InitialDAGSizeBytes = profile.Spec.InitialDAGMiB * 1024 * 1024
+		spec.DAGSizeBytes = spec.InitialDAGSizeBytes
+	}
+	if profile.Spec.DAGGrowthMiB != 0 {
+		spec.DAGGrowthBytesPerEpoch = profile.Spec.DAGGrowthMiB * 1024 * 1024
+	}
+	if profile.Spec.EpochBlocks != 0 {
+		spec.EpochBlocks = profile.Spec.EpochBlocks
+	}
+	if profile.Spec.NodeSizeBytes != 0 {
+		spec.NodeSize = profile.Spec.NodeSizeBytes
+	}
+	if profile.Spec.ReadsPerHash != 0 {
+		spec.ReadsPerHash = profile.Spec.ReadsPerHash
+	}
+	if profile.Spec.RoundCommitPeriod != 0 {
+		spec.RoundCommitInterval = profile.Spec.RoundCommitPeriod
+	}
+	if err := spec.Validate(); err != nil {
+		return genesisProfile{}, types.ChainConfig{}, types.GenesisConfig{}, err
+	}
+	target, err := cx.ParseTargetHex(strings.TrimSpace(profile.Genesis.Target))
+	if err != nil {
+		return genesisProfile{}, types.ChainConfig{}, types.GenesisConfig{}, err
+	}
+	chainID := strings.TrimSpace(profile.Genesis.ChainID)
+	if chainID == "" {
+		chainID = profile.Chain.NetworkID
+	}
+	genesisCfg := types.GenesisConfig{
+		ChainID:   chainID,
+		Message:   profile.Genesis.Message,
+		Timestamp: profile.Genesis.Timestamp,
+		Bits:      target,
+		Spec:      spec,
+		ExtraData: profile.Genesis.ExtraData,
+	}
+	chainCfg := types.ChainConfig{
+		NetworkID: profile.Chain.NetworkID,
+		Spec:      spec,
+	}
+	return profile, chainCfg, genesisCfg, nil
 }
 
 type daemonConfig struct {
