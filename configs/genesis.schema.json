@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://colossusx/configs/genesis.schema.json",
+  "title": "ColossusX Genesis (Minimal)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["chain_id", "timestamp", "target"],
+  "properties": {
+    "chain_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "message": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "target": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "mode": {
+      "type": "string",
+      "description": "Optional. Defaults to colossusx."
+    },
+    "initial_dag_mib": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Optional. Overrides initial DAG size."
+    },
+    "dag_growth_mib_per_epoch": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Optional. Overrides DAG growth per epoch."
+    },
+    "extra_data": {
+      "type": "string"
+    }
+  }
+}
