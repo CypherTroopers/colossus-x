@@ -1,7 +1,7 @@
 {
   "$schema": "../genesis.schema.json",
   "chain_id": "devnet",
-  "message": "colossusx devnet genesis",
+  "message": "Hello cypher Devs",
   "timestamp": 1704067200,
   "target": "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
   "mode": "colossusx",
