@@ -1,0 +1,9 @@
+{
+  "$schema": "../genesis.schema.json",
+  "chain_id": "devnet",
+  "message": "colossusx devnet genesis",
+  "timestamp": 1704067200,
+  "target": "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "mode": "colossusx",
+  "extra_data": "mode=colossusx"
+}

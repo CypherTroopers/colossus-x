@@ -88,6 +88,7 @@ func printTopLevelUsage() {
 type daemonConfig struct {
 	Chain         types.ChainConfig
 	Genesis       types.GenesisConfig
+	GenesisFile   string
 	NodeRole      nodeRole
 	Mine          bool
 	Workers       int
@@ -149,6 +150,9 @@ func runDaemon(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := validateStoredGenesis(store, cfg.Genesis); err != nil {
+		return err
+	}
 
 	n, err := node.New(node.Config{
 		Chain:              cfg.Chain,
@@ -193,6 +197,7 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 	maxNonces := fs.Uint64("max-nonces", 500000, "maximum nonce range per block template")
 	blockTime := fs.Duration("block-time", 500*time.Millisecond, "delay between mined blocks")
 	genesisMessage := fs.String("genesis-message", "colossusx devnet genesis", "genesis message")
+	genesisFile := fs.String("genesis-file", "", "path to genesis JSON file (recommended for shared chain bootstrap)")
 	dataDir := fs.String("datadir", filepath.Join(".", "data"), "node data directory")
 	listenAddr := fs.String("listen", ":30333", "tcp listen address")
 	bootnodes := fs.String("bootnodes", "", "comma-separated bootnode addresses")
@@ -267,7 +272,36 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 		Spec:      spec,
 		ExtraData: fmt.Sprintf("mode=%s", spec.Mode),
 	}
-	return daemonConfig{Chain: chainCfg, Genesis: genesis, NodeRole: role, Mine: *mine, Workers: *workers, MaxNonces: *maxNonces, BlockTime: *blockTime, DataDir: *dataDir, ListenAddr: *listenAddr, Bootnodes: node.ParseBootnodes(*bootnodes), NodeID: *nodeID, MinerBackend: backendMode, AutoBackend: autoBackend, MinerDAGAlloc: *minerDAGAlloc}, nil
+	if strings.TrimSpace(*genesisFile) != "" {
+		loadedGenesis, err := loadGenesisConfigFromFile(*genesisFile)
+		if err != nil {
+			return daemonConfig{}, err
+		}
+		if flagProvided(fs, "network") && *networkID != loadedGenesis.ChainID {
+			return daemonConfig{}, fmt.Errorf("genesis-file chain_id %q does not match -network %q", loadedGenesis.ChainID, *networkID)
+		}
+		if flagProvided(fs, "mode") && mode != loadedGenesis.Spec.Mode {
+			return daemonConfig{}, fmt.Errorf("genesis-file spec.mode %q does not match -mode %q", loadedGenesis.Spec.Mode, mode)
+		}
+		if flagProvided(fs, "target") && target != loadedGenesis.Bits {
+			return daemonConfig{}, fmt.Errorf("genesis-file target does not match -target")
+		}
+		if flagProvided(fs, "initial-dag-mib") && spec.InitialDAGSizeBytes != loadedGenesis.Spec.InitialDAGSizeBytes {
+			return daemonConfig{}, fmt.Errorf("genesis-file initial_dag_size_bytes does not match -initial-dag-mib")
+		}
+		if flagProvided(fs, "dag-mib") && spec.InitialDAGSizeBytes != loadedGenesis.Spec.InitialDAGSizeBytes {
+			return daemonConfig{}, fmt.Errorf("genesis-file initial_dag_size_bytes does not match -dag-mib")
+		}
+		if flagProvided(fs, "dag-growth-mib-per-epoch") && spec.DAGGrowthBytesPerEpoch != loadedGenesis.Spec.DAGGrowthBytesPerEpoch {
+			return daemonConfig{}, fmt.Errorf("genesis-file dag_growth_bytes_per_epoch does not match -dag-growth-mib-per-epoch")
+		}
+		if flagProvided(fs, "genesis-message") && *genesisMessage != loadedGenesis.Message {
+			return daemonConfig{}, fmt.Errorf("genesis-file message does not match -genesis-message")
+		}
+		genesis = loadedGenesis
+		chainCfg = types.ChainConfig{NetworkID: loadedGenesis.ChainID, Spec: loadedGenesis.Spec}
+	}
+	return daemonConfig{Chain: chainCfg, Genesis: genesis, GenesisFile: *genesisFile, NodeRole: role, Mine: *mine, Workers: *workers, MaxNonces: *maxNonces, BlockTime: *blockTime, DataDir: *dataDir, ListenAddr: *listenAddr, Bootnodes: node.ParseBootnodes(*bootnodes), NodeID: *nodeID, MinerBackend: backendMode, AutoBackend: autoBackend, MinerDAGAlloc: *minerDAGAlloc}, nil
 }
 
 func parseNodeRole(raw string) (nodeRole, error) {

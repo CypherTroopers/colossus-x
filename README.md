@@ -63,6 +63,7 @@ Minimal example:
 go run ./cmd/colossusx daemon \
   -mode colossusx \
   -network mainnet \
+  -genesis-file ./configs/mainnet/genesis.json \
   -node-role miner \
   -datadir ./data \
   -listen :30333 \
@@ -77,7 +78,7 @@ go run ./cmd/colossusx daemon \
 Using a built binary:
 
 ```bash
-./bin/colossusx daemon -mode colossusx -network mainnet -datadir ./data -listen :30333
+./bin/colossusx daemon -mode colossusx -network mainnet -genesis-file ./configs/mainnet/genesis.json -datadir ./data -listen :30333
 ```
 
 > Note: currently, only `colossusx` mode is supported.
@@ -127,6 +128,7 @@ Minimal example:
 go run ./cmd/colossusx daemon \
   -mode colossusx \
   -network mainnet \
+  -genesis-file ./configs/mainnet/genesis.json \
   -datadir ./data \
   -listen :30333
 ```
@@ -137,6 +139,7 @@ Full example with major flags:
 go run ./cmd/colossusx daemon \
   -mode colossusx \
   -network mainnet \
+  -genesis-file ./configs/mainnet/genesis.json \
   -node-role miner \
   -initial-dag-mib 32768 \
   -dag-growth-mib-per-epoch 256 \
@@ -160,6 +163,7 @@ Verification/relay node example (mining disabled):
 go run ./cmd/colossusx daemon \
   -mode colossusx \
   -network mainnet \
+  -genesis-file ./configs/mainnet/genesis.json \
   -node-role full \
   -initial-dag-mib 32768 \
   -dag-growth-mib-per-epoch 256 \
@@ -212,6 +216,7 @@ go run ./cmd/colossusx verify \
 | `-max-nonces` | `500000` | Nonce search cap per block template. |
 | `-block-time` | `500ms` | Block production interval. |
 | `-genesis-message` | `colossusx devnet genesis` | Genesis message string. |
+| `-genesis-file` | `""` | Path to shared genesis JSON (recommended for multi-node sync). When provided, chain/spec/target/message are loaded from file and must match explicitly provided overlapping flags. |
 | `-datadir` | `./data` | Node persistent data directory. |
 | `-listen` | `:30333` | TCP listen address. |
 | `-bootnodes` | `""` | Comma-separated bootnodes. |
@@ -221,6 +226,8 @@ go run ./cmd/colossusx verify \
 | `-miner-dag-alloc` | `auto` | `auto/go-heap/pinned-host/cuda-managed/opencl-svm/metal-shared`. |
 
 In `colossusx` production-like mode, `backend` and `dag-alloc` combinations are constrained; invalid combinations are rejected.
+
+`-genesis-file` の JSON は最小構成（`chain_id`, `timestamp`, `target`）で利用可能です。`mode`, `initial_dag_mib`, `dag_growth_mib_per_epoch` は必要なときだけ指定してください（未指定時は ColossusX のデフォルト値を使用）。
 
 ## 3-2. `mine` flags (default command)
 
