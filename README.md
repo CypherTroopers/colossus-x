@@ -57,10 +57,10 @@ For real node operation, use the executable form that supports the **`daemon`** 
 
 ## 2. Production node startup command (`daemon`)
 
-Minimal example:
+Using a built binary (`daemon` subcommand):
 
 ```bash
-go run ./cmd/colossusx daemon \
+./bin/colossusx daemon \
   -mode colossusx \
   -network mainnet \
   -genesis-file ./configs/mainnet/genesis.json \
@@ -69,16 +69,9 @@ go run ./cmd/colossusx daemon \
   -listen :30333 \
   -node-id node-01 \
   -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
-  -mine=true \
   -workers 16 \
   -miner-backend auto \
   -miner-dag-alloc auto
-```
-
-Using a built binary:
-
-```bash
-./bin/colossusx daemon -mode colossusx -network mainnet -genesis-file ./configs/mainnet/genesis.json -datadir ./data -listen :30333
 ```
 
 > Note: currently, only `colossusx` mode is supported.
@@ -90,17 +83,6 @@ Using a built binary:
 Colossus-X follows a single-binary, multi-entry-point CLI design. Use `mine`, `daemon`, and `verify` depending on your workload.
 
 ### 2.5-1. `mine` (run mining)
-
-Minimal example:
-
-```bash
-go run ./cmd/colossusx mine \
-  -mode colossusx \
-  -backend unified \
-  -dag-alloc auto \
-  -workers 16 \
-  -max-nonces 200000
-```
 
 Full example with major flags:
 
@@ -122,18 +104,9 @@ go run ./cmd/colossusx mine \
 
 ### 2.5-2. `daemon` (start node)
 
-Minimal example:
+`daemon` は `-node-role` で挙動を切り替える運用が推奨です。以下は role ごとの起動パターンです。
 
-```bash
-go run ./cmd/colossusx daemon \
-  -mode colossusx \
-  -network mainnet \
-  -genesis-file ./configs/mainnet/genesis.json \
-  -datadir ./data \
-  -listen :30333
-```
-
-Full example with major flags:
+`-node-role=miner` (mining node):
 
 ```bash
 go run ./cmd/colossusx daemon \
@@ -157,7 +130,7 @@ go run ./cmd/colossusx daemon \
   -miner-dag-alloc auto
 ```
 
-Verification/relay node example (mining disabled):
+`-node-role=full` (verification / relay node):
 
 ```bash
 go run ./cmd/colossusx daemon \
@@ -168,6 +141,27 @@ go run ./cmd/colossusx daemon \
   -initial-dag-mib 32768 \
   -dag-growth-mib-per-epoch 256 \
   -no-mine \
+  -workers 16 \
+  -max-nonces 500000 \
+  -block-time 500ms \
+  -genesis-message "colossusx mainnet genesis" \
+  -datadir ./data \
+  -listen :30333 \
+  -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
+  -node-id node-01 \
+  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+  -miner-backend auto \
+  -miner-dag-alloc auto
+```
+
+`-node-role=light` (light verification node):
+
+```bash
+go run ./cmd/colossusx daemon \
+  -mode colossusx \
+  -network mainnet \
+  -genesis-file ./configs/mainnet/genesis.json \
+  -node-role light \
   -workers 16 \
   -max-nonces 500000 \
   -block-time 500ms \
