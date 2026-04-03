@@ -13,6 +13,8 @@ const (
 	MessagePing       = "ping"
 	MessagePong       = "pong"
 	MessageNewBlk     = "newblock"
+	MessagePoWSubmit  = "pow_submit"
+	MessageReward     = "reward"
 	MessageGetHeaders = "getheaders"
 	MessageHeaders    = "headers"
 	MessageGetBlocks  = "getblocks"
@@ -22,6 +24,7 @@ const (
 type HelloMessage struct {
 	NodeID  string `json:"node_id"`
 	Network string `json:"network"`
+	Role    string `json:"role,omitempty"`
 	Version string `json:"version"`
 	Listen  string `json:"listen"`
 }
@@ -40,6 +43,19 @@ type PongMessage struct {
 
 type NewBlockMessage struct {
 	Block types.Block `json:"block"`
+}
+
+type PoWSubmitMessage struct {
+	MinerID string      `json:"miner_id"`
+	Block   types.Block `json:"block"`
+}
+
+type RewardMessage struct {
+	ValidatorID string `json:"validator_id"`
+	MinerID     string `json:"miner_id"`
+	Amount      uint64 `json:"amount"`
+	Height      uint64 `json:"height"`
+	BlockHash   string `json:"block_hash"`
 }
 
 type GetHeadersMessage struct {

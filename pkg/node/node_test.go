@@ -46,3 +46,33 @@ func TestNodeUsesSelectedMiningConfiguration(t *testing.T) {
 		t.Fatalf("expected mining configuration log, got %#v", logs)
 	}
 }
+
+func TestParseNodeIDs(t *testing.T) {
+	got := ParseNodeIDs(" val-1, ,val-2 ,, val-3 ")
+	if len(got) != 3 || got[0] != "val-1" || got[1] != "val-2" || got[2] != "val-3" {
+		t.Fatalf("unexpected parsed node IDs: %#v", got)
+	}
+}
+
+func TestNodeValidatorAllowList(t *testing.T) {
+	n := &Node{validators: map[string]struct{}{"val-1": {}, "val-2": {}}}
+	if !n.isAllowedValidator("val-1") {
+		t.Fatal("expected val-1 to be allowed")
+	}
+	if n.isAllowedValidator("random") {
+		t.Fatal("expected random to be denied")
+	}
+	open := &Node{validators: map[string]struct{}{}}
+	if !open.isAllowedValidator("any") {
+		t.Fatal("expected open validator set to allow all")
+	}
+}
+
+func TestCreditRewardAccumulates(t *testing.T) {
+	n := &Node{rewards: map[string]uint64{}}
+	n.creditReward("miner-1", 100000)
+	n.creditReward("miner-1", 50000)
+	if got := n.rewards["miner-1"]; got != 150000 {
+		t.Fatalf("expected accumulated reward 150000, got %d", got)
+	}
+}

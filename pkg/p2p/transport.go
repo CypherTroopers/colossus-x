@@ -19,6 +19,8 @@ type Handlers struct {
 	OnPing             func(*Peer, PingMessage)
 	OnPong             func(*Peer, PongMessage)
 	OnNewBlock         func(*Peer, NewBlockMessage)
+	OnPoWSubmit        func(*Peer, PoWSubmitMessage)
+	OnReward           func(*Peer, RewardMessage)
 	OnGetHeaders       func(*Peer, GetHeadersMessage)
 	OnHeaders          func(*Peer, HeadersMessage)
 	OnGetBlocks        func(*Peer, GetBlocksMessage)
@@ -28,6 +30,7 @@ type Handlers struct {
 type Config struct {
 	NodeID        string
 	Network       string
+	Role          string
 	ListenAddr    string
 	AdvertiseAddr string
 	Bootnodes     []string
@@ -138,7 +141,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn, inbound bool) {
 	if s.cfg.Handlers.OnPeerConnected != nil {
 		s.cfg.Handlers.OnPeerConnected(peer)
 	}
-	_ = peer.Send(Message{Type: MessageHello, Body: HelloMessage{NodeID: s.cfg.NodeID, Network: s.cfg.Network, Version: s.cfg.Version, Listen: s.cfg.AdvertiseAddr}})
+	_ = peer.Send(Message{Type: MessageHello, Body: HelloMessage{NodeID: s.cfg.NodeID, Network: s.cfg.Network, Role: s.cfg.Role, Version: s.cfg.Version, Listen: s.cfg.AdvertiseAddr}})
 	for {
 		msg, err := readMessage(conn)
 		if err != nil {
@@ -208,6 +211,24 @@ func (s *Server) dispatch(peer *Peer, msg Message) error {
 		}
 		if s.cfg.Handlers.OnNewBlock != nil {
 			s.cfg.Handlers.OnNewBlock(peer, body)
+		}
+		return nil
+	case MessagePoWSubmit:
+		var body PoWSubmitMessage
+		if err := json.Unmarshal(payload, &body); err != nil {
+			return err
+		}
+		if s.cfg.Handlers.OnPoWSubmit != nil {
+			s.cfg.Handlers.OnPoWSubmit(peer, body)
+		}
+		return nil
+	case MessageReward:
+		var body RewardMessage
+		if err := json.Unmarshal(payload, &body); err != nil {
+			return err
+		}
+		if s.cfg.Handlers.OnReward != nil {
+			s.cfg.Handlers.OnReward(peer, body)
 		}
 		return nil
 	case MessageGetHeaders:
