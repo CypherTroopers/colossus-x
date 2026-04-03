@@ -30,6 +30,7 @@ type Validator struct {
 	config                 types.ChainConfig
 	backend                cx.HashBackend
 	workers                int
+	lightValidation        bool
 	now                    func() time.Time
 	mu                     sync.Mutex
 	sharedDAGs             map[string]*cx.DAG
@@ -135,6 +136,18 @@ func (v *Validator) MiningAllocatorName() string {
 	return v.miningAllocator.Name()
 }
 
+func (v *Validator) SetLightValidation(enabled bool) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.lightValidation = enabled
+}
+
+func (v *Validator) LightValidationEnabled() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.lightValidation
+}
+
 func (v *Validator) ValidateHeader(store chain.Store, header types.BlockHeader) error {
 	return v.validateHeader(store, header, true)
 }
@@ -173,7 +186,7 @@ func (v *Validator) validateHeader(store chain.Store, header types.BlockHeader, 
 		if header.DAGMerkleRoot == (types.Hash{}) {
 			return fmt.Errorf("%w: colossusx header missing dag merkle root", ErrInvalidPoW)
 		}
-		if verifyDAGMerkle {
+		if verifyDAGMerkle && !v.LightValidationEnabled() {
 			if err := v.validateDAGMerkleRoot(header); err != nil {
 				return err
 			}
@@ -348,11 +361,9 @@ func (v *Validator) Close() error {
 
 func (v *Validator) validatePoW(block types.Block) error {
 	header := block.Header
-	dag, err := v.validationDAGForHeader(header)
-	if err != nil {
-		return err
-	}
 	if header.AlgorithmVersion >= 2 || v.config.Spec.Mode == cx.ModeColossusX {
+		spec := v.config.Spec.ResolvedForHeight(header.Height)
+		spec.DAGSizeBytes = header.DAGSizeBytes
 		var solution cx.ColossusXSolution
 		switch {
 		case block.ColossusXSolution != nil:
@@ -366,14 +377,25 @@ func (v *Validator) validatePoW(block types.Block) error {
 		default:
 			return fmt.Errorf("%w: colossusx solution is required", ErrInvalidPoW)
 		}
-		root := v.merkleRootForDAG(header, dag)
-		if err := v.validateDAGMerkleRootWithRoot(header, root); err != nil {
-			return err
+		root := [32]byte(header.DAGMerkleRoot)
+		if !v.LightValidationEnabled() {
+			dag, err := v.validationDAGForHeader(header)
+			if err != nil {
+				return err
+			}
+			root = v.merkleRootForDAG(header, dag)
+			if err := v.validateDAGMerkleRootWithRoot(header, root); err != nil {
+				return err
+			}
 		}
-		if err := cx.VerifyColossusXSolution(dag.Spec(), header.EncodeForMining(), header.Target, root, solution); err != nil {
+		if err := cx.VerifyColossusXSolution(spec, header.EncodeForMining(), header.Target, root, solution); err != nil {
 			return fmt.Errorf("%w: colossusx solution verify failed: %v", ErrInvalidPoW, err)
 		}
 		return nil
+	}
+	dag, err := v.validationDAGForHeader(header)
+	if err != nil {
+		return err
 	}
 	hash := v.backend.Hash(header.EncodeForMining(), cx.NewUint64Nonce(header.Nonce), dag)
 	if !cx.LessOrEqualBE(hash.Pow256, header.Target) {

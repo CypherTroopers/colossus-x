@@ -88,6 +88,7 @@ func printTopLevelUsage() {
 type daemonConfig struct {
 	Chain         types.ChainConfig
 	Genesis       types.GenesisConfig
+	NodeRole      nodeRole
 	Mine          bool
 	Workers       int
 	MaxNonces     uint64
@@ -100,6 +101,14 @@ type daemonConfig struct {
 	AutoBackend   bool
 	MinerDAGAlloc string
 }
+
+type nodeRole string
+
+const (
+	nodeRoleFull  nodeRole = "full"
+	nodeRoleMiner nodeRole = "miner"
+	nodeRoleLight nodeRole = "light"
+)
 
 const (
 	daemonAutoBenchmarkDAGBytes uint64 = 64 * 1024 * 1024
@@ -123,12 +132,18 @@ func runDaemon(args []string) error {
 			log.Printf("validator close: %v", closeErr)
 		}
 	}()
+	validator.SetLightValidation(cfg.NodeRole == nodeRoleLight)
 
-	miningBackend, strategy, runtimeStatus, err := initializeMining(cfg)
-	if err != nil {
-		return err
+	miningBackend := cx.HashBackend(consensus.CPUBackend{})
+	strategy := miner.MemoryStrategy(miner.GoHeapMemory{})
+	runtimeStatus := "not-required"
+	if cfg.NodeRole != nodeRoleLight {
+		miningBackend, strategy, runtimeStatus, err = initializeMining(cfg)
+		if err != nil {
+			return err
+		}
+		validator.SetMiningBackend(miningBackend, strategy)
 	}
-	validator.SetMiningBackend(miningBackend, strategy)
 
 	store, err := chain.NewDiskStore(cfg.DataDir)
 	if err != nil {
@@ -157,7 +172,7 @@ func runDaemon(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	fmt.Printf("colossusx daemon starting network=%s mode=%s initial_dag=%dMiB dag_growth=%dMiB/epoch workers=%d mine=%t datadir=%s listen=%s bootnodes=%d node_id=%s miner_backend=%s miner_dag_alloc=%s resolved_alloc=%s runtime_init=%s execution=%s\n", cfg.Chain.NetworkID, cfg.Chain.Spec.Mode, cfg.Chain.Spec.InitialDAGSizeBytes/(1024*1024), cfg.Chain.Spec.DAGGrowthBytesPerEpoch/(1024*1024), cfg.Workers, cfg.Mine, cfg.DataDir, cfg.ListenAddr, len(cfg.Bootnodes), cfg.NodeID, miningBackend.Mode(), cfg.MinerDAGAlloc, strategy.Name(), runtimeStatus, miningBackend.Description())
+	fmt.Printf("colossusx daemon starting network=%s mode=%s node_role=%s initial_dag=%dMiB dag_growth=%dMiB/epoch workers=%d mine=%t datadir=%s listen=%s bootnodes=%d node_id=%s miner_backend=%s miner_dag_alloc=%s resolved_alloc=%s runtime_init=%s execution=%s\n", cfg.Chain.NetworkID, cfg.Chain.Spec.Mode, cfg.NodeRole, cfg.Chain.Spec.InitialDAGSizeBytes/(1024*1024), cfg.Chain.Spec.DAGGrowthBytesPerEpoch/(1024*1024), cfg.Workers, cfg.Mine, cfg.DataDir, cfg.ListenAddr, len(cfg.Bootnodes), cfg.NodeID, miningBackend.Mode(), cfg.MinerDAGAlloc, strategy.Name(), runtimeStatus, miningBackend.Description())
 	if err := n.Run(ctx); err != nil && err != context.Canceled {
 		return err
 	}
@@ -171,6 +186,7 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 	initialDAGMiB := fs.Uint64("initial-dag-mib", cx.ColossusXInitialDAGSizeBytes/(1024*1024), "initial DAG size in MiB")
 	dagMiB := fs.Uint64("dag-mib", 0, "deprecated alias for -initial-dag-mib")
 	dagGrowthMiB := fs.Uint64("dag-growth-mib-per-epoch", cx.DefaultDAGGrowthBytesPerEpoch/(1024*1024), "DAG growth per epoch in MiB")
+	nodeRoleName := fs.String("node-role", string(nodeRoleFull), "node role: full, miner, or light")
 	mine := fs.Bool("mine", true, "enable local mining loop")
 	noMine := fs.Bool("no-mine", false, "disable local mining loop")
 	workers := fs.Int("workers", runtime.NumCPU(), "mining workers")
@@ -190,6 +206,20 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 
 	if *dagMiB != 0 {
 		*initialDAGMiB = *dagMiB
+	}
+	role, err := parseNodeRole(*nodeRoleName)
+	if err != nil {
+		return daemonConfig{}, err
+	}
+	if flagProvided(fs, "node-role") && (flagProvided(fs, "mine") || flagProvided(fs, "no-mine")) {
+		return daemonConfig{}, errors.New("use either --node-role or --mine/--no-mine, not both")
+	}
+	if !flagProvided(fs, "node-role") {
+		if flagProvided(fs, "no-mine") && *noMine {
+			role = nodeRoleFull
+		} else if flagProvided(fs, "mine") && *mine {
+			role = nodeRoleMiner
+		}
 	}
 
 	mode := cx.Mode(*modeName)
@@ -222,7 +252,10 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 	if err != nil {
 		return daemonConfig{}, err
 	}
-	if *noMine {
+	switch role {
+	case nodeRoleMiner:
+		*mine = true
+	case nodeRoleFull, nodeRoleLight:
 		*mine = false
 	}
 	chainCfg := types.ChainConfig{NetworkID: *networkID, Spec: spec}
@@ -234,7 +267,27 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 		Spec:      spec,
 		ExtraData: fmt.Sprintf("mode=%s", spec.Mode),
 	}
-	return daemonConfig{Chain: chainCfg, Genesis: genesis, Mine: *mine, Workers: *workers, MaxNonces: *maxNonces, BlockTime: *blockTime, DataDir: *dataDir, ListenAddr: *listenAddr, Bootnodes: node.ParseBootnodes(*bootnodes), NodeID: *nodeID, MinerBackend: backendMode, AutoBackend: autoBackend, MinerDAGAlloc: *minerDAGAlloc}, nil
+	return daemonConfig{Chain: chainCfg, Genesis: genesis, NodeRole: role, Mine: *mine, Workers: *workers, MaxNonces: *maxNonces, BlockTime: *blockTime, DataDir: *dataDir, ListenAddr: *listenAddr, Bootnodes: node.ParseBootnodes(*bootnodes), NodeID: *nodeID, MinerBackend: backendMode, AutoBackend: autoBackend, MinerDAGAlloc: *minerDAGAlloc}, nil
+}
+
+func parseNodeRole(raw string) (nodeRole, error) {
+	role := nodeRole(strings.ToLower(strings.TrimSpace(raw)))
+	switch role {
+	case nodeRoleFull, nodeRoleMiner, nodeRoleLight:
+		return role, nil
+	default:
+		return "", fmt.Errorf("unsupported node role %q (expected full|miner|light)", raw)
+	}
+}
+
+func flagProvided(fs *flag.FlagSet, name string) bool {
+	provided := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			provided = true
+		}
+	})
+	return provided
 }
 
 func initializeMining(cfg daemonConfig) (cx.HashBackend, miner.MemoryStrategy, string, error) {
