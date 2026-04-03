@@ -9,6 +9,7 @@ import (
 
 	miner "colossusx"
 	cx "colossusx/colossusx"
+	"colossusx/pkg/chain"
 	"colossusx/pkg/consensus"
 	"colossusx/pkg/types"
 )
@@ -150,6 +151,7 @@ func TestResolveCommand(t *testing.T) {
 		{args: []string{"mine", "-bench"}, cmd: "mine"},
 		{args: []string{"daemon"}, cmd: "daemon"},
 		{args: []string{"node"}, cmd: "daemon"},
+		{args: []string{"init"}, cmd: "init"},
 		{args: []string{"verify"}, cmd: "verify"},
 		{args: []string{"unknown"}, cmd: "unknown"},
 	}
@@ -158,6 +160,90 @@ func TestResolveCommand(t *testing.T) {
 		if cmd != tc.cmd {
 			t.Fatalf("resolveCommand(%v) = %q want %q", tc.args, cmd, tc.cmd)
 		}
+	}
+}
+
+func TestLoadGenesisProfile(t *testing.T) {
+	tmp := t.TempDir()
+	profilePath := filepath.Join(tmp, "genesis.json")
+	raw := []byte(`{
+  "chain": {"network_id":"testnet-profile","mode":"colossusx"},
+  "genesis": {
+    "chain_id":"testnet-profile",
+    "message":"profile genesis",
+    "timestamp": 1775097600,
+    "target":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "extra_data":"profile"
+  },
+  "spec": {
+    "algorithm_version":2,
+    "initial_dag_mib":1,
+    "dag_growth_mib_per_epoch":1,
+    "epoch_blocks":7200,
+    "node_size_bytes":256,
+    "reads_per_hash":8,
+    "round_commit_interval":8
+  }
+}`)
+	if err := os.WriteFile(profilePath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profile, chainCfg, genesisCfg, err := loadGenesisProfile(profilePath)
+	if err != nil {
+		t.Fatalf("loadGenesisProfile: %v", err)
+	}
+	if profile.Chain.NetworkID != "testnet-profile" {
+		t.Fatalf("unexpected network id %q", profile.Chain.NetworkID)
+	}
+	if chainCfg.NetworkID != "testnet-profile" {
+		t.Fatalf("unexpected chain cfg network id %q", chainCfg.NetworkID)
+	}
+	if genesisCfg.Timestamp != 1775097600 {
+		t.Fatalf("unexpected genesis timestamp %d", genesisCfg.Timestamp)
+	}
+	if genesisCfg.Spec.InitialDAGSizeBytes != 1024*1024 {
+		t.Fatalf("unexpected initial dag bytes %d", genesisCfg.Spec.InitialDAGSizeBytes)
+	}
+}
+
+func TestRunInitInitializesDatadirFromGenesisJSON(t *testing.T) {
+	tmp := t.TempDir()
+	profilePath := filepath.Join(tmp, "genesis.json")
+	raw := []byte(`{
+  "chain": {"network_id":"testnet-init","mode":"colossusx"},
+  "genesis": {
+    "chain_id":"testnet-init",
+    "message":"init genesis",
+    "timestamp": 1775097600,
+    "target":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "extra_data":"init"
+  },
+  "spec": {
+    "algorithm_version":2,
+    "initial_dag_mib":1,
+    "dag_growth_mib_per_epoch":1
+  }
+}`)
+	if err := os.WriteFile(profilePath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	datadir := filepath.Join(tmp, "node-data")
+	if err := runInit([]string{"-genesis-json", profilePath, "-datadir", datadir, "-max-nonces", "1000000"}); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+	store, err := chain.NewDiskStore(datadir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tip, _, err := store.CurrentTip()
+	if err != nil {
+		t.Fatalf("CurrentTip: %v", err)
+	}
+	if tip.Header.Height != 0 {
+		t.Fatalf("expected initialized genesis height 0, got %d", tip.Header.Height)
+	}
+	if tip.Header.Timestamp != 1775097600 {
+		t.Fatalf("expected genesis timestamp from profile, got %d", tip.Header.Timestamp)
 	}
 }
 

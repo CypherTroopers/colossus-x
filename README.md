@@ -15,6 +15,14 @@ mkdir -p ./data
 tar -xzf bootstrap-datadir.tar.gz -C ./data
 ```
 
+If you want to initialize a fresh datadir directly from a genesis profile JSON (without `bootstrap-datadir.tar.gz`), run:
+
+```bash
+./bin/colossusx init \
+  -genesis-json ./configs/genesis.p2p.example.json \
+  -datadir ./data/hybrid-01
+```
+
 ## Hybrid node
 
 ```bash
