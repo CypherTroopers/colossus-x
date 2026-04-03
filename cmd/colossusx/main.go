@@ -86,19 +86,22 @@ func printTopLevelUsage() {
 }
 
 type daemonConfig struct {
-	Chain         types.ChainConfig
-	Genesis       types.GenesisConfig
-	Mine          bool
-	Workers       int
-	MaxNonces     uint64
-	BlockTime     time.Duration
-	DataDir       string
-	ListenAddr    string
-	Bootnodes     []string
-	NodeID        string
-	MinerBackend  miner.BackendMode
-	AutoBackend   bool
-	MinerDAGAlloc string
+	Chain             types.ChainConfig
+	Genesis           types.GenesisConfig
+	Role              string
+	Mine              bool
+	Workers           int
+	MaxNonces         uint64
+	BlockTime         time.Duration
+	BlockReward       uint64
+	DataDir           string
+	ListenAddr        string
+	Bootnodes         []string
+	NodeID            string
+	FixedValidatorSet []string
+	MinerBackend      miner.BackendMode
+	AutoBackend       bool
+	MinerDAGAlloc     string
 }
 
 const (
@@ -138,12 +141,15 @@ func runDaemon(args []string) error {
 	n, err := node.New(node.Config{
 		Chain:              cfg.Chain,
 		Genesis:            cfg.Genesis,
+		Role:               cfg.Role,
 		Mine:               cfg.Mine,
 		MaxNonces:          cfg.MaxNonces,
 		BlockTime:          cfg.BlockTime,
+		BlockReward:        cfg.BlockReward,
 		NodeID:             cfg.NodeID,
 		ListenAddr:         cfg.ListenAddr,
 		Bootnodes:          cfg.Bootnodes,
+		FixedValidatorSet:  cfg.FixedValidatorSet,
 		MinerBackend:       string(miningBackend.Mode()),
 		MinerDAGAlloc:      cfg.MinerDAGAlloc,
 		ResolvedDAGAlloc:   strategy.Name(),
@@ -176,11 +182,15 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 	workers := fs.Int("workers", runtime.NumCPU(), "mining workers")
 	maxNonces := fs.Uint64("max-nonces", 500000, "maximum nonce range per block template")
 	blockTime := fs.Duration("block-time", 500*time.Millisecond, "delay between mined blocks")
+	blockReward := fs.Uint64("block-reward", 50, "block reward amount")
 	genesisMessage := fs.String("genesis-message", "colossusx devnet genesis", "genesis message")
 	dataDir := fs.String("datadir", filepath.Join(".", "data"), "node data directory")
 	listenAddr := fs.String("listen", ":30333", "tcp listen address")
 	bootnodes := fs.String("bootnodes", "", "comma-separated bootnode addresses")
 	nodeID := fs.String("node-id", "", "stable node identifier")
+	fixedValidators := fs.String("fixed-validator-set", "", "comma-separated fixed validator node IDs")
+	nodeRole := fs.String("node-role", node.RoleHybrid, "node role: hybrid, miner, validator")
+	testnetPreset := fs.Bool("testnet-preset", false, "apply testnet defaults: network=testnet, block-time=10m, block-reward=100000")
 	targetHex := fs.String("target", "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "mining target in hex")
 	minerBackend := fs.String("miner-backend", string(miner.BackendOpenCL), "mining backend: auto, cuda, opencl, metal, cpu, unified, or gpu (auto selects best available)")
 	minerDAGAlloc := fs.String("miner-dag-alloc", "auto", "mining DAG allocation strategy: auto, go-heap, pinned-host, cuda-managed, opencl-svm, metal-shared")
@@ -225,7 +235,21 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 	if *noMine {
 		*mine = false
 	}
+	if *testnetPreset {
+		*networkID = "testnet"
+		*blockTime = 10 * time.Minute
+		*blockReward = 100000
+		if *genesisMessage == "colossusx devnet genesis" {
+			*genesisMessage = "colossusx testnet genesis"
+		}
+	}
 	chainCfg := types.ChainConfig{NetworkID: *networkID, Spec: spec}
+	role := strings.ToLower(strings.TrimSpace(*nodeRole))
+	switch role {
+	case node.RoleHybrid, node.RoleMiner, node.RoleValidator:
+	default:
+		return daemonConfig{}, fmt.Errorf("invalid node-role %q", *nodeRole)
+	}
 	genesis := types.GenesisConfig{
 		ChainID:   *networkID,
 		Message:   *genesisMessage,
@@ -234,7 +258,24 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 		Spec:      spec,
 		ExtraData: fmt.Sprintf("mode=%s", spec.Mode),
 	}
-	return daemonConfig{Chain: chainCfg, Genesis: genesis, Mine: *mine, Workers: *workers, MaxNonces: *maxNonces, BlockTime: *blockTime, DataDir: *dataDir, ListenAddr: *listenAddr, Bootnodes: node.ParseBootnodes(*bootnodes), NodeID: *nodeID, MinerBackend: backendMode, AutoBackend: autoBackend, MinerDAGAlloc: *minerDAGAlloc}, nil
+	return daemonConfig{
+		Chain:             chainCfg,
+		Genesis:           genesis,
+		Role:              role,
+		Mine:              *mine,
+		Workers:           *workers,
+		MaxNonces:         *maxNonces,
+		BlockTime:         *blockTime,
+		BlockReward:       *blockReward,
+		DataDir:           *dataDir,
+		ListenAddr:        *listenAddr,
+		Bootnodes:         node.ParseBootnodes(*bootnodes),
+		NodeID:            *nodeID,
+		FixedValidatorSet: node.ParseNodeIDs(*fixedValidators),
+		MinerBackend:      backendMode,
+		AutoBackend:       autoBackend,
+		MinerDAGAlloc:     *minerDAGAlloc,
+	}, nil
 }
 
 func initializeMining(cfg daemonConfig) (cx.HashBackend, miner.MemoryStrategy, string, error) {

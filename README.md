@@ -174,7 +174,48 @@ go run ./cmd/colossusx daemon \
   -miner-dag-alloc auto
 ```
 
-### 2.5-3. `verify` (PoW validation)
+### 2.5-3. Testnet preset (10-minute key blocks + fixed validators)
+
+```bash
+go run ./cmd/colossusx daemon \
+  -testnet-preset \
+  -fixed-validator-set validator-01,validator-02,validator-03 \
+  -node-id validator-01 \
+  -listen :30333 \
+  -bootnodes 198.51.100.10:30333,198.51.100.11:30333
+```
+
+`-testnet-preset` applies:
+- `-network=testnet`
+- `-block-time=10m`
+- `-block-reward=100000`
+- default genesis message `colossusx testnet genesis` (if `-genesis-message` was not explicitly changed)
+
+`-fixed-validator-set` allows only the listed validator node IDs.
+
+#### PoW提出専用マイナー + バリデータ配布の実行例
+
+Validatorノード（PoW受領・検証・報酬配布）:
+
+```bash
+go run ./cmd/colossusx daemon \
+  -node-role validator \
+  -no-mine \
+  -fixed-validator-set validator-01,validator-02,validator-03 \
+  -node-id validator-01
+```
+
+Minerノード（PoW提出専用）:
+
+```bash
+go run ./cmd/colossusx daemon \
+  -node-role miner \
+  -mine \
+  -node-id miner-01 \
+  -bootnodes 198.51.100.10:30333,198.51.100.11:30333
+```
+
+### 2.5-4. `verify` (PoW validation)
 
 Block validation (ColossusX v2):
 
@@ -239,11 +280,15 @@ For block-sync P2P stability, all nodes must keep these values identical:
 | `-workers` | `runtime.NumCPU()` | Number of mining workers. |
 | `-max-nonces` | `500000` | Nonce search cap per block template. |
 | `-block-time` | `500ms` | Block production interval. |
+| `-block-reward` | `50` | Block reward included in coinbase metadata. |
 | `-genesis-message` | `colossusx devnet genesis` | Genesis message string. |
 | `-datadir` | `./data` | Node persistent data directory. |
 | `-listen` | `:30333` | TCP listen address. |
 | `-bootnodes` | `""` | Comma-separated bootnodes. |
 | `-node-id` | `""` | Stable node identifier. |
+| `-node-role` | `hybrid` | `hybrid/miner/validator`。`miner` は採掘結果PoWを送信、`validator` は受領して検証・配布。 |
+| `-fixed-validator-set` | `""` | Comma-separated fixed validator node IDs. |
+| `-testnet-preset` | `false` | Apply testnet defaults (`network=testnet`, `block-time=10m`, `block-reward=100000`). |
 | `-target` | `0fffffffff...ffff` | Mining target (hex). |
 | `-miner-backend` | `opencl` | `auto/cuda/opencl/metal/cpu/unified/gpu` (`auto` chooses `cuda`→`metal`→`opencl`→`unified`). |
 | `-miner-dag-alloc` | `auto` | `auto/go-heap/pinned-host/cuda-managed/opencl-svm/metal-shared`. |

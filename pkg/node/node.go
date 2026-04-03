@@ -21,13 +21,16 @@ import (
 type Config struct {
 	Chain              types.ChainConfig
 	Genesis            types.GenesisConfig
+	Role               string
 	Mine               bool
 	MaxNonces          uint64
 	BlockTime          time.Duration
+	BlockReward        uint64
 	Logf               func(string, ...any)
 	NodeID             string
 	ListenAddr         string
 	Bootnodes          []string
+	FixedValidatorSet  []string
 	MinerBackend       string
 	MinerDAGAlloc      string
 	ResolvedDAGAlloc   string
@@ -36,17 +39,26 @@ type Config struct {
 }
 
 type Node struct {
-	cfg       Config
-	store     chain.Store
-	validator *consensus.Validator
-	p2p       *p2p.Server
-	mu        sync.RWMutex
+	cfg        Config
+	store      chain.Store
+	validator  *consensus.Validator
+	p2p        *p2p.Server
+	mu         sync.RWMutex
+	validators map[string]struct{}
+	rewardsMu  sync.Mutex
+	rewards    map[string]uint64
 
 	syncing   atomic.Bool
 	syncMu    sync.Mutex
 	headerSub map[string]chan p2p.HeadersMessage
 	blockSub  map[string]chan p2p.BlocksMessage
 }
+
+const (
+	RoleHybrid    = "hybrid"
+	RoleMiner     = "miner"
+	RoleValidator = "validator"
+)
 
 func New(cfg Config, validator *consensus.Validator, store chain.Store) (*Node, error) {
 	if store == nil {
@@ -64,17 +76,26 @@ func New(cfg Config, validator *consensus.Validator, store chain.Store) (*Node, 
 	if cfg.NodeID == "" {
 		cfg.NodeID = fmt.Sprintf("node-%d", time.Now().UnixNano())
 	}
+	if cfg.Role == "" {
+		cfg.Role = RoleHybrid
+	}
 	n := &Node{
-		cfg:       cfg,
-		validator: validator,
-		store:     store,
-		headerSub: make(map[string]chan p2p.HeadersMessage),
-		blockSub:  make(map[string]chan p2p.BlocksMessage),
+		cfg:        cfg,
+		validator:  validator,
+		store:      store,
+		headerSub:  make(map[string]chan p2p.HeadersMessage),
+		blockSub:   make(map[string]chan p2p.BlocksMessage),
+		validators: make(map[string]struct{}),
+		rewards:    make(map[string]uint64),
+	}
+	for _, id := range cfg.FixedValidatorSet {
+		n.validators[id] = struct{}{}
 	}
 	cfg.Logf("node mining configured backend=%s dag_alloc=%s resolved_alloc=%s runtime_init=%s execution=%s", cfg.MinerBackend, cfg.MinerDAGAlloc, cfg.ResolvedDAGAlloc, cfg.RuntimeInitStatus, cfg.MinerExecutionPath)
 	n.p2p = p2p.NewServer(p2p.Config{
 		NodeID:        cfg.NodeID,
 		Network:       cfg.Chain.NetworkID,
+		Role:          cfg.Role,
 		ListenAddr:    cfg.ListenAddr,
 		AdvertiseAddr: cfg.ListenAddr,
 		Bootnodes:     cfg.Bootnodes,
@@ -86,6 +107,8 @@ func New(cfg Config, validator *consensus.Validator, store chain.Store) (*Node, 
 			OnPing:             n.onPing,
 			OnPong:             n.onPong,
 			OnNewBlock:         n.onNewBlock,
+			OnPoWSubmit:        n.onPoWSubmit,
+			OnReward:           n.onReward,
 			OnGetHeaders:       n.onGetHeaders,
 			OnHeaders:          n.onHeaders,
 			OnGetBlocks:        n.onGetBlocks,
@@ -138,6 +161,18 @@ func (n *Node) Run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		if n.cfg.Role == RoleMiner {
+			n.submitPoW(block)
+			n.cfg.Logf("submitted pow height=%d hash=%s nonce=%d hashes=%d hashrate=%.2fH/s", block.Header.Height, block.BlockHash().String(), block.Header.Nonce, res.Hashes, res.HashRate)
+			timer := time.NewTimer(n.cfg.BlockTime)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+			continue
+		}
 		_, becameTip, err := n.validator.InsertBlock(n.store, block)
 		if err != nil {
 			return err
@@ -177,6 +212,9 @@ func (n *Node) mineNextBlock() (types.Block, cx.MineResult, error) {
 		StateRoot:        sha256.Sum256([]byte(tip.BlockHash().String())),
 	}
 	block := types.Block{Header: header}
+	if n.cfg.BlockReward > 0 {
+		block.Transactions = []string{fmt.Sprintf("coinbase:%s:%d", n.cfg.NodeID, n.cfg.BlockReward)}
+	}
 	sealed, res, err := n.validator.SealBlock(block, n.cfg.MaxNonces)
 	if err != nil {
 		return types.Block{}, cx.MineResult{}, err
@@ -202,8 +240,21 @@ func (n *Node) onHello(peer *p2p.Peer, msg p2p.HelloMessage) {
 		_ = peer.Conn.Close()
 		return
 	}
+	if msg.Role != RoleMiner && !n.isAllowedValidator(msg.NodeID) {
+		n.cfg.Logf("peer validator mismatch addr=%s peer_id=%s", peer.Addr, msg.NodeID)
+		_ = peer.Conn.Close()
+		return
+	}
 	n.cfg.Logf("hello received peer=%s addr=%s version=%s listen=%s", msg.NodeID, peer.Addr, msg.Version, msg.Listen)
 	go n.sendStatus(peer)
+}
+
+func (n *Node) isAllowedValidator(nodeID string) bool {
+	if len(n.validators) == 0 {
+		return true
+	}
+	_, ok := n.validators[nodeID]
+	return ok
 }
 
 func (n *Node) onStatus(peer *p2p.Peer, msg p2p.StatusMessage) {
@@ -235,6 +286,68 @@ func (n *Node) onNewBlock(peer *p2p.Peer, msg p2p.NewBlockMessage) {
 	if becameTip {
 		go n.broadcastStatus()
 	}
+}
+
+func (n *Node) onPoWSubmit(peer *p2p.Peer, msg p2p.PoWSubmitMessage) {
+	if n.cfg.Role == RoleMiner {
+		return
+	}
+	if msg.MinerID == "" || msg.Block.BlockHash() == (types.Hash{}) {
+		return
+	}
+	_, becameTip, err := n.validator.InsertBlock(n.store, msg.Block)
+	if err != nil {
+		n.cfg.Logf("pow submit rejected miner=%s err=%v", msg.MinerID, err)
+		return
+	}
+	n.cfg.Logf("pow submit accepted miner=%s height=%d hash=%s became_tip=%t", msg.MinerID, msg.Block.Header.Height, msg.Block.BlockHash().String(), becameTip)
+	if n.cfg.BlockReward > 0 {
+		n.creditReward(msg.MinerID, n.cfg.BlockReward)
+		_ = peer.Send(p2p.Message{
+			Type: p2p.MessageReward,
+			Body: p2p.RewardMessage{
+				ValidatorID: n.cfg.NodeID,
+				MinerID:     msg.MinerID,
+				Amount:      n.cfg.BlockReward,
+				Height:      msg.Block.Header.Height,
+				BlockHash:   msg.Block.BlockHash().String(),
+			},
+		})
+	}
+	if becameTip {
+		n.broadcastNewBlock(msg.Block)
+		go n.broadcastStatus()
+	}
+}
+
+func (n *Node) onReward(peer *p2p.Peer, msg p2p.RewardMessage) {
+	if msg.MinerID != n.cfg.NodeID || msg.Amount == 0 {
+		return
+	}
+	n.creditReward(msg.MinerID, msg.Amount)
+	n.cfg.Logf("reward received validator=%s amount=%d height=%d block=%s", msg.ValidatorID, msg.Amount, msg.Height, msg.BlockHash)
+}
+
+func (n *Node) submitPoW(block types.Block) {
+	peers := n.p2p.Peers()
+	for _, peer := range peers {
+		if peer == nil {
+			continue
+		}
+		_ = peer.Send(p2p.Message{
+			Type: p2p.MessagePoWSubmit,
+			Body: p2p.PoWSubmitMessage{
+				MinerID: n.cfg.NodeID,
+				Block:   block,
+			},
+		})
+	}
+}
+
+func (n *Node) creditReward(minerID string, amount uint64) {
+	n.rewardsMu.Lock()
+	defer n.rewardsMu.Unlock()
+	n.rewards[minerID] += amount
 }
 
 func (n *Node) onGetHeaders(peer *p2p.Peer, msg p2p.GetHeadersMessage) {
@@ -462,6 +575,10 @@ func (n *Node) localStatus() (types.PeerStatus, error) {
 }
 
 func ParseBootnodes(raw string) []string {
+	return ParseNodeIDs(raw)
+}
+
+func ParseNodeIDs(raw string) []string {
 	parts := strings.Split(raw, ",")
 	out := make([]string, 0, len(parts))
 	for _, part := range parts {

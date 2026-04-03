@@ -40,6 +40,38 @@ func TestParseDaemonFlagsAllowsCPUBackendInColossusXProduction(t *testing.T) {
 	}
 }
 
+func TestParseDaemonFlagsTestnetPreset(t *testing.T) {
+	cfg, err := parseDaemonFlags([]string{"-testnet-preset"})
+	if err != nil {
+		t.Fatalf("expected testnet preset to parse, got err=%v", err)
+	}
+	if cfg.Chain.NetworkID != "testnet" {
+		t.Fatalf("expected network=testnet, got %q", cfg.Chain.NetworkID)
+	}
+	if cfg.BlockTime != 10*time.Minute {
+		t.Fatalf("expected block-time=10m, got %s", cfg.BlockTime)
+	}
+	if cfg.BlockReward != 100000 {
+		t.Fatalf("expected block reward=100000, got %d", cfg.BlockReward)
+	}
+	if cfg.Genesis.Message != "colossusx testnet genesis" {
+		t.Fatalf("expected testnet genesis message, got %q", cfg.Genesis.Message)
+	}
+}
+
+func TestParseDaemonFlagsNodeRole(t *testing.T) {
+	cfg, err := parseDaemonFlags([]string{"-node-role=miner"})
+	if err != nil {
+		t.Fatalf("expected node-role=miner to parse, got err=%v", err)
+	}
+	if cfg.Role != "miner" {
+		t.Fatalf("expected role miner, got %q", cfg.Role)
+	}
+	if _, err := parseDaemonFlags([]string{"-node-role=invalid"}); err == nil {
+		t.Fatal("expected invalid node role to fail")
+	}
+}
+
 func TestInitializeMiningUnifiedGoHeap(t *testing.T) {
 	cfg := daemonConfig{MinerBackend: "unified", MinerDAGAlloc: "go-heap"}
 	cfg.Chain.Spec.Mode = "colossusx"
