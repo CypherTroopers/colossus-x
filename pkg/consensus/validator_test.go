@@ -418,6 +418,38 @@ func TestColossusXValidateBlockRejectsTamperedCompactProof(t *testing.T) {
 	}
 }
 
+func TestColossusXLightValidationVerifiesWithoutBuildingLocalDAG(t *testing.T) {
+	chainCfg, genesisCfg := colossusxTestConfig(t)
+	sealer, err := NewValidator(chainCfg, CPUBackend{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sealer.Close()
+	store := chain.NewMemoryStore()
+
+	genesis, _, err := sealer.SealBlock(types.NewGenesisBlock(genesisCfg), 2000)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	light, err := NewValidator(chainCfg, CPUBackend{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer light.Close()
+	light.SetLightValidation(true)
+
+	if err := light.ValidateBlock(store, genesis); err != nil {
+		t.Fatalf("expected light validation to accept block via merkle proofs only: %v", err)
+	}
+	if got := light.SharedCacheSize(); got != 0 {
+		t.Fatalf("expected no shared DAG cache in light validation mode, got %d", got)
+	}
+	if got := light.ValidationCacheSize(); got != 0 {
+		t.Fatalf("expected no validation DAG cache in light validation mode, got %d", got)
+	}
+}
+
 func TestSharedCacheKeyIgnoresAllocatorName(t *testing.T) {
 	chainCfg, genesisCfg := testConfig(t)
 	v, err := NewValidator(chainCfg, CPUBackend{}, 1)

@@ -63,6 +63,7 @@ Minimal example:
 go run ./cmd/colossusx daemon \
   -mode colossusx \
   -network mainnet \
+  -node-role miner \
   -datadir ./data \
   -listen :30333 \
   -node-id node-01 \
@@ -136,6 +137,7 @@ Full example with major flags:
 go run ./cmd/colossusx daemon \
   -mode colossusx \
   -network mainnet \
+  -node-role miner \
   -initial-dag-mib 32768 \
   -dag-growth-mib-per-epoch 256 \
   -mine=true \
@@ -158,6 +160,7 @@ Verification/relay node example (mining disabled):
 go run ./cmd/colossusx daemon \
   -mode colossusx \
   -network mainnet \
+  -node-role full \
   -initial-dag-mib 32768 \
   -dag-growth-mib-per-epoch 256 \
   -no-mine \
@@ -202,8 +205,9 @@ go run ./cmd/colossusx verify \
 | `-initial-dag-mib` | `32768` | Initial DAG size (MiB). |
 | `-dag-mib` | `0` | Deprecated alias for `-initial-dag-mib`; overrides when non-zero. |
 | `-dag-growth-mib-per-epoch` | `256` | DAG growth per epoch (MiB). |
-| `-mine` | `true` | Enable local mining. |
-| `-no-mine` | `false` | Disable local mining (equivalent to `-mine=false`). |
+| `-node-role` | `full` | Node role: `full` (no mining, full DAG verification), `miner` (enable mining), `light` (skip mining runtime init + verify via Merkle-proof path without local full DAG reconstruction). |
+| `-mine` | `true` | Legacy flag. Prefer `-node-role=miner`. |
+| `-no-mine` | `false` | Legacy flag. Prefer `-node-role=full` (or `light`). |
 | `-workers` | `runtime.NumCPU()` | Number of mining workers. |
 | `-max-nonces` | `500000` | Nonce search cap per block template. |
 | `-block-time` | `500ms` | Block production interval. |

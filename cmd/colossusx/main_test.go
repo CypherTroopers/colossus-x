@@ -40,6 +40,38 @@ func TestParseDaemonFlagsAllowsCPUBackendInColossusXProduction(t *testing.T) {
 	}
 }
 
+func TestParseDaemonFlagsDefaultsToFullRoleWithoutMining(t *testing.T) {
+	cfg, err := parseDaemonFlags(nil)
+	if err != nil {
+		t.Fatalf("parseDaemonFlags: %v", err)
+	}
+	if cfg.NodeRole != nodeRoleFull {
+		t.Fatalf("expected default node role full, got %q", cfg.NodeRole)
+	}
+	if cfg.Mine {
+		t.Fatal("expected full role to disable mining")
+	}
+}
+
+func TestParseDaemonFlagsMinerRoleEnablesMining(t *testing.T) {
+	cfg, err := parseDaemonFlags([]string{"-node-role=miner"})
+	if err != nil {
+		t.Fatalf("parseDaemonFlags: %v", err)
+	}
+	if cfg.NodeRole != nodeRoleMiner {
+		t.Fatalf("expected miner role, got %q", cfg.NodeRole)
+	}
+	if !cfg.Mine {
+		t.Fatal("expected miner role to enable mining")
+	}
+}
+
+func TestParseDaemonFlagsRejectsNodeRoleWithLegacyMineFlags(t *testing.T) {
+	if _, err := parseDaemonFlags([]string{"-node-role=light", "-mine=true"}); err == nil {
+		t.Fatal("expected conflict error when node-role and mine flags are mixed")
+	}
+}
+
 func TestInitializeMiningUnifiedGoHeap(t *testing.T) {
 	cfg := daemonConfig{MinerBackend: "unified", MinerDAGAlloc: "go-heap"}
 	cfg.Chain.Spec.Mode = "colossusx"
