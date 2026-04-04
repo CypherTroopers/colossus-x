@@ -104,28 +104,23 @@ go run ./cmd/colossusx mine \
 
 ### 2.5-2. `daemon` (start node)
 
-`daemon` は `-node-role` で挙動を切り替える運用が推奨です。以下は role ごとの起動パターンです。
+For `daemon`, role-based operation with `-node-role` is recommended. If all nodes share `-genesis-file ./configs/devnet/genesis.json`, nodes running on different servers can synchronize on the same chain (`-node-role` cannot be combined with `-mine/-no-mine`).
 
 `-node-role=miner` (mining node):
 
 ```bash
 go run ./cmd/colossusx daemon \
   -mode colossusx \
-  -network mainnet \
-  -genesis-file ./configs/mainnet/genesis.json \
+  -network devnet \
+  -genesis-file ./configs/devnet/genesis.json \
   -node-role miner \
-  -initial-dag-mib 32768 \
-  -dag-growth-mib-per-epoch 256 \
-  -mine=true \
   -workers 16 \
   -max-nonces 500000 \
   -block-time 500ms \
-  -genesis-message "colossusx mainnet genesis" \
   -datadir ./data \
   -listen :30333 \
   -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
   -node-id node-01 \
-  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
   -miner-backend auto \
   -miner-dag-alloc auto
 ```
@@ -135,21 +130,16 @@ go run ./cmd/colossusx daemon \
 ```bash
 go run ./cmd/colossusx daemon \
   -mode colossusx \
-  -network mainnet \
-  -genesis-file ./configs/mainnet/genesis.json \
+  -network devnet \
+  -genesis-file ./configs/devnet/genesis.json \
   -node-role full \
-  -initial-dag-mib 32768 \
-  -dag-growth-mib-per-epoch 256 \
-  -no-mine \
   -workers 16 \
   -max-nonces 500000 \
   -block-time 500ms \
-  -genesis-message "colossusx mainnet genesis" \
   -datadir ./data \
   -listen :30333 \
   -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
   -node-id node-01 \
-  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
   -miner-backend auto \
   -miner-dag-alloc auto
 ```
@@ -159,18 +149,16 @@ go run ./cmd/colossusx daemon \
 ```bash
 go run ./cmd/colossusx daemon \
   -mode colossusx \
-  -network mainnet \
-  -genesis-file ./configs/mainnet/genesis.json \
+  -network devnet \
+  -genesis-file ./configs/devnet/genesis.json \
   -node-role light \
   -workers 16 \
   -max-nonces 500000 \
   -block-time 500ms \
-  -genesis-message "colossusx mainnet genesis" \
   -datadir ./data \
   -listen :30333 \
   -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
   -node-id node-01 \
-  -target 0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
   -miner-backend auto \
   -miner-dag-alloc auto
 ```
@@ -221,7 +209,7 @@ go run ./cmd/colossusx verify \
 
 In `colossusx` production-like mode, `backend` and `dag-alloc` combinations are constrained; invalid combinations are rejected.
 
-`-genesis-file` の JSON は最小構成（`chain_id`, `timestamp`, `target`）で利用可能です。`mode`, `initial_dag_mib`, `dag_growth_mib_per_epoch` は必要なときだけ指定してください（未指定時は ColossusX のデフォルト値を使用）。
+The `-genesis-file` JSON can be used with a minimal set of fields (`chain_id`, `timestamp`, `target`). Specify `mode`, `initial_dag_mib`, and `dag_growth_mib_per_epoch` only when needed (ColossusX defaults are used when omitted).
 
 ## 3-2. `mine` flags (default command)
 
