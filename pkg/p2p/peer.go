@@ -12,6 +12,12 @@ import (
 	"colossusx/pkg/types"
 )
 
+const (
+	defaultMaxMessageSize = 4 << 20
+	defaultReadTimeout    = 90 * time.Second
+	defaultWriteTimeout   = 15 * time.Second
+)
+
 type Peer struct {
 	ID          string
 	Addr        string
@@ -31,9 +37,13 @@ func (p *Peer) Send(msg Message) error {
 	if err != nil {
 		return err
 	}
+	if len(body) > defaultMaxMessageSize {
+		return fmt.Errorf("message too large: %d", len(body))
+	}
 	frame := make([]byte, 4+len(body))
 	binary.BigEndian.PutUint32(frame[:4], uint32(len(body)))
 	copy(frame[4:], body)
+	_ = p.Conn.SetWriteDeadline(time.Now().Add(defaultWriteTimeout))
 	_, err = p.Conn.Write(frame)
 	return err
 }
@@ -48,8 +58,7 @@ func NewPeerSet() *PeerSet { return &PeerSet{peers: make(map[string]*Peer)} }
 func (ps *PeerSet) Add(peer *Peer) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	key := peerKey(peer)
-	ps.peers[key] = peer
+	ps.peers[peerKey(peer)] = peer
 }
 
 func (ps *PeerSet) Remove(peer *Peer) {
@@ -74,6 +83,23 @@ func (ps *PeerSet) Broadcast(msg Message) {
 	}
 }
 
+func (ps *PeerSet) HasPeerID(id string, exclude *Peer) bool {
+	if id == "" {
+		return false
+	}
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+	for _, peer := range ps.peers {
+		if peer == exclude {
+			continue
+		}
+		if peer.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func peerKey(peer *Peer) string {
 	if peer.ID != "" {
 		return peer.ID
@@ -87,6 +113,9 @@ func readMessage(r io.Reader) (Message, error) {
 		return Message{}, err
 	}
 	size := binary.BigEndian.Uint32(sizeBuf[:])
+	if size == 0 || size > defaultMaxMessageSize {
+		return Message{}, fmt.Errorf("invalid message size %d", size)
+	}
 	payload := make([]byte, size)
 	if _, err := io.ReadFull(r, payload); err != nil {
 		return Message{}, err

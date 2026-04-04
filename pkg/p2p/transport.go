@@ -138,6 +138,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn, inbound bool) {
 	}
 	_ = peer.Send(Message{Type: MessageHello, Body: HelloMessage{NodeID: s.cfg.NodeID, Network: s.cfg.Network, Version: s.cfg.Version, Listen: s.cfg.AdvertiseAddr}})
 	for {
+		_ = conn.SetReadDeadline(time.Now().Add(defaultReadTimeout))
 		msg, err := readMessage(conn)
 		if err != nil {
 			return
@@ -164,6 +165,15 @@ func (s *Server) dispatch(peer *Peer, msg Message) error {
 		var body HelloMessage
 		if err := json.Unmarshal(payload, &body); err != nil {
 			return err
+		}
+		if strings.TrimSpace(body.NodeID) == "" {
+			return fmt.Errorf("peer hello missing node id")
+		}
+		if body.NodeID == s.cfg.NodeID {
+			return fmt.Errorf("self connection rejected")
+		}
+		if s.peers.HasPeerID(body.NodeID, peer) {
+			return fmt.Errorf("duplicate peer id %q", body.NodeID)
 		}
 		peer.ID = body.NodeID
 		peer.Hello = body
