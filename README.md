@@ -15,7 +15,7 @@ Colossus-X is a PoW miner/node implementation written in Go. The CLI currently p
 git clone https://github.com/CypherTroopers/colossus-x.git
 cd colossus-x
 git fetch --all
-git checkout Miner-Validator-Hybrid
+git checkout Miner-Validator-Hybrid-testnet
 ```
 
 ### 1-2. Required tools
