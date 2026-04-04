@@ -259,3 +259,62 @@ func TestShouldPrewarmNextEpoch(t *testing.T) {
 		})
 	}
 }
+
+func TestEpochStartHeight(t *testing.T) {
+	tests := []struct {
+		name        string
+		height      uint64
+		epochBlocks uint64
+		want        uint64
+	}{
+		{name: "zero epoch size returns height", height: 7, epochBlocks: 0, want: 7},
+		{name: "genesis epoch", height: 0, epochBlocks: 10, want: 0},
+		{name: "within epoch", height: 17, epochBlocks: 10, want: 10},
+		{name: "epoch boundary", height: 20, epochBlocks: 10, want: 20},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			if got := epochStartHeight(tc.height, tc.epochBlocks); got != tc.want {
+				t.Fatalf("epochStartHeight(%d,%d)=%d want=%d", tc.height, tc.epochBlocks, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestScheduleStartupPrewarmCachesCurrentEpochForFullNode(t *testing.T) {
+	spec := cx.ColossusXSpecWithGrowth(1024*1024, cx.DefaultDAGGrowthBytesPerEpoch)
+	target, err := cx.ParseTargetHex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chainCfg := types.ChainConfig{NetworkID: "startup-prewarm", Spec: spec}
+	genesis := types.GenesisConfig{ChainID: "startup-prewarm", Message: "startup", Timestamp: time.Now().Unix() - 1, Bits: target, Spec: spec}
+	validator, err := consensus.NewValidator(chainCfg, consensus.CPUBackend{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer validator.Close()
+	n, err := New(Config{
+		Chain:     chainCfg,
+		Genesis:   genesis,
+		Mine:      false,
+		MaxNonces: 8,
+		Logf:      func(string, ...any) {},
+	}, validator, chain.NewMemoryStore())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := n.InitGenesis(); err != nil {
+		t.Fatalf("InitGenesis: %v", err)
+	}
+	n.scheduleStartupPrewarm()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if got := validator.SharedCacheSize(); got > 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("expected startup prewarm to cache DAG, shared cache size=%d", validator.SharedCacheSize())
+}
