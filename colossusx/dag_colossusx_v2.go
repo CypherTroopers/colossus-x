@@ -14,7 +14,7 @@ const (
 	colossusXSeedCacheEntry   = 64
 	colossusXMinCacheEntries  = 1024
 	colossusXSeedCachePasses  = 3
-	colossusXCellCacheLookups = 256
+	colossusXCellCacheLookups = 128
 )
 
 func colossusXCacheEntriesForSpec(spec Spec) int {
