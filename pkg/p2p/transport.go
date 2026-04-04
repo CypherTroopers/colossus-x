@@ -19,6 +19,8 @@ type Handlers struct {
 	OnPing             func(*Peer, PingMessage)
 	OnPong             func(*Peer, PongMessage)
 	OnNewBlock         func(*Peer, NewBlockMessage)
+	OnSyncRequest      func(*Peer, SyncRequestMessage)
+	OnSyncResponse     func(*Peer, SyncResponseMessage)
 }
 
 type Config struct {
@@ -204,6 +206,24 @@ func (s *Server) dispatch(peer *Peer, msg Message) error {
 		}
 		if s.cfg.Handlers.OnNewBlock != nil {
 			s.cfg.Handlers.OnNewBlock(peer, body)
+		}
+		return nil
+	case MessageSyncRq:
+		var body SyncRequestMessage
+		if err := json.Unmarshal(payload, &body); err != nil {
+			return err
+		}
+		if s.cfg.Handlers.OnSyncRequest != nil {
+			s.cfg.Handlers.OnSyncRequest(peer, body)
+		}
+		return nil
+	case MessageSyncRs:
+		var body SyncResponseMessage
+		if err := json.Unmarshal(payload, &body); err != nil {
+			return err
+		}
+		if s.cfg.Handlers.OnSyncResponse != nil {
+			s.cfg.Handlers.OnSyncResponse(peer, body)
 		}
 		return nil
 	default:

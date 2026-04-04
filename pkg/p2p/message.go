@@ -13,6 +13,8 @@ const (
 	MessagePing   = "ping"
 	MessagePong   = "pong"
 	MessageNewBlk = "newblock"
+	MessageSyncRq = "sync_request"
+	MessageSyncRs = "sync_response"
 )
 
 type HelloMessage struct {
@@ -36,4 +38,13 @@ type PongMessage struct {
 
 type NewBlockMessage struct {
 	Block types.Block `json:"block"`
+}
+
+type SyncRequestMessage struct {
+	FromHeight uint64 `json:"from_height"`
+	Limit      uint64 `json:"limit"`
+}
+
+type SyncResponseMessage struct {
+	Blocks []types.Block `json:"blocks"`
 }
