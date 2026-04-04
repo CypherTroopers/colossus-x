@@ -142,3 +142,84 @@ func TestParseBootnodes(t *testing.T) {
 		t.Fatalf("ParseBootnodes=%v want=%v", got, want)
 	}
 }
+
+func TestNextEpochStartHeight(t *testing.T) {
+	tests := []struct {
+		name        string
+		fromHeight  uint64
+		epochBlocks uint64
+		wantHeight  uint64
+		wantOK      bool
+	}{
+		{name: "invalid zero epoch size", fromHeight: 10, epochBlocks: 0, wantHeight: 0, wantOK: false},
+		{name: "from genesis", fromHeight: 0, epochBlocks: 30000, wantHeight: 30000, wantOK: true},
+		{name: "middle of epoch", fromHeight: 42, epochBlocks: 10, wantHeight: 50, wantOK: true},
+		{name: "on epoch boundary", fromHeight: 50, epochBlocks: 10, wantHeight: 60, wantOK: true},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := nextEpochStartHeight(tc.fromHeight, tc.epochBlocks)
+			if ok != tc.wantOK {
+				t.Fatalf("ok=%v want=%v", ok, tc.wantOK)
+			}
+			if got != tc.wantHeight {
+				t.Fatalf("height=%d want=%d", got, tc.wantHeight)
+			}
+		})
+	}
+}
+
+func TestShouldPrewarmNextEpoch(t *testing.T) {
+	tests := []struct {
+		name        string
+		fromHeight  uint64
+		epochBlocks uint64
+		leadBlocks  uint64
+		wantHeight  uint64
+		wantOK      bool
+	}{
+		{
+			name:        "disabled when lead is zero",
+			fromHeight:  95,
+			epochBlocks: 100,
+			leadBlocks:  0,
+			wantOK:      false,
+		},
+		{
+			name:        "skip when too early",
+			fromHeight:  50,
+			epochBlocks: 100,
+			leadBlocks:  10,
+			wantOK:      false,
+		},
+		{
+			name:        "prewarm near epoch end",
+			fromHeight:  95,
+			epochBlocks: 100,
+			leadBlocks:  10,
+			wantHeight:  100,
+			wantOK:      true,
+		},
+		{
+			name:        "lead clamped to epoch-1",
+			fromHeight:  2,
+			epochBlocks: 3,
+			leadBlocks:  99,
+			wantHeight:  3,
+			wantOK:      true,
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := shouldPrewarmNextEpoch(tc.fromHeight, tc.epochBlocks, tc.leadBlocks)
+			if ok != tc.wantOK {
+				t.Fatalf("ok=%v want=%v", ok, tc.wantOK)
+			}
+			if got != tc.wantHeight {
+				t.Fatalf("height=%d want=%d", got, tc.wantHeight)
+			}
+		})
+	}
+}

@@ -40,9 +40,12 @@ type Node struct {
 	validator *consensus.Validator
 	p2p       *p2p.Server
 	mu        sync.RWMutex
+	prewarmMu sync.Mutex
+	prewarmed map[uint64]struct{}
 }
 
 const syncBatchLimit uint64 = 128
+const daemonEpochPrewarmLeadBlocks uint64 = 128
 
 func New(cfg Config, validator *consensus.Validator, store chain.Store) (*Node, error) {
 	if store == nil {
@@ -60,7 +63,12 @@ func New(cfg Config, validator *consensus.Validator, store chain.Store) (*Node, 
 	if cfg.NodeID == "" {
 		cfg.NodeID = fmt.Sprintf("node-%d", time.Now().UnixNano())
 	}
-	n := &Node{cfg: cfg, validator: validator, store: store}
+	n := &Node{
+		cfg:       cfg,
+		validator: validator,
+		store:     store,
+		prewarmed: make(map[uint64]struct{}),
+	}
 	cfg.Logf("node mining configured backend=%s dag_alloc=%s resolved_alloc=%s runtime_init=%s execution=%s", cfg.MinerBackend, cfg.MinerDAGAlloc, cfg.ResolvedDAGAlloc, cfg.RuntimeInitStatus, cfg.MinerExecutionPath)
 	n.p2p = p2p.NewServer(p2p.Config{
 		NodeID:        cfg.NodeID,
@@ -164,12 +172,62 @@ func (n *Node) mineNextBlock() (types.Block, cx.MineResult, error) {
 		TxRoot:           sha256.Sum256([]byte(fmt.Sprintf("height:%d", nextHeight))),
 		StateRoot:        sha256.Sum256([]byte(tip.BlockHash().String())),
 	}
+	n.scheduleNextEpochPrewarm(nextHeight)
 	block := types.Block{Header: header}
 	sealed, res, err := n.validator.SealBlock(block, n.cfg.MaxNonces)
 	if err != nil {
 		return types.Block{}, cx.MineResult{}, err
 	}
 	return sealed, res, nil
+}
+
+func nextEpochStartHeight(fromHeight uint64, epochBlocks uint64) (uint64, bool) {
+	if epochBlocks == 0 {
+		return 0, false
+	}
+	epoch := fromHeight / epochBlocks
+	next := (epoch + 1) * epochBlocks
+	return next, true
+}
+
+func (n *Node) scheduleNextEpochPrewarm(fromHeight uint64) {
+	nextEpoch, ok := shouldPrewarmNextEpoch(fromHeight, n.cfg.Chain.Spec.EpochBlocks, daemonEpochPrewarmLeadBlocks)
+	if !ok {
+		return
+	}
+	n.prewarmMu.Lock()
+	if _, exists := n.prewarmed[nextEpoch]; exists {
+		n.prewarmMu.Unlock()
+		return
+	}
+	n.prewarmed[nextEpoch] = struct{}{}
+	n.prewarmMu.Unlock()
+
+	go func(height uint64) {
+		if err := n.validator.PrewarmMiningDAGAtHeight(height); err != nil {
+			n.cfg.Logf("dag prewarm failed height=%d err=%v", height, err)
+			n.prewarmMu.Lock()
+			delete(n.prewarmed, height)
+			n.prewarmMu.Unlock()
+			return
+		}
+		n.cfg.Logf("dag prewarm ready height=%d", height)
+	}(nextEpoch)
+}
+
+func shouldPrewarmNextEpoch(fromHeight uint64, epochBlocks uint64, leadBlocks uint64) (uint64, bool) {
+	nextEpoch, ok := nextEpochStartHeight(fromHeight, epochBlocks)
+	if !ok || leadBlocks == 0 {
+		return 0, false
+	}
+	if epochBlocks > 1 && leadBlocks >= epochBlocks {
+		leadBlocks = epochBlocks - 1
+	}
+	remaining := nextEpoch - fromHeight
+	if remaining > leadBlocks {
+		return 0, false
+	}
+	return nextEpoch, true
 }
 
 func (n *Node) onPeerConnected(peer *p2p.Peer) {
