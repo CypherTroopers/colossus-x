@@ -223,7 +223,7 @@ func tuneRuntimeForHeapDAGGeneration(dag *DAG) func() {
 	default:
 		return func() {}
 	}
-	oldGC := debug.SetGCPercent(20)
+	oldGC := debug.SetGCPercent(100)
 	headroom := dag.spec.DAGSizeBytes/4 + 256*1024*1024
 	limit := dag.spec.DAGSizeBytes + headroom + colossusXSeedCacheBytes
 	if limit > uint64(math.MaxInt64) {
