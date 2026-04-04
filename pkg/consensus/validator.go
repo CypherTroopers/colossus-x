@@ -270,18 +270,18 @@ func (v *Validator) InsertBlock(store chain.Store, block types.Block) (*big.Int,
 		}
 		totalWork.Add(totalWork, parentWork)
 	}
-	if err := store.StoreBlock(block, totalWork); err != nil {
-		return nil, false, err
-	}
 	current, currentWork, err := store.CurrentTip()
 	if err != nil {
-		if err := store.SetCurrentTip(blockHash); err != nil {
+		if err := store.StoreBlock(block, totalWork); err != nil {
 			return nil, false, err
 		}
 		return totalWork, true, nil
 	}
 	best := SelectBestChainByTotalWork(current.BlockHash(), currentWork, blockHash, totalWork)
 	if best == blockHash {
+		if err := store.StoreBlock(block, totalWork); err != nil {
+			return nil, false, err
+		}
 		if err := store.SetCurrentTip(blockHash); err != nil {
 			return nil, false, err
 		}

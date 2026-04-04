@@ -99,6 +99,65 @@ func TestValidatorInsertBlock(t *testing.T) {
 	}
 }
 
+func TestValidatorInsertBlock_DiscardsBlockWhenItDoesNotBecomeTip(t *testing.T) {
+	chainCfg, genesisCfg := testConfig(t)
+	v, err := NewValidator(chainCfg, CPUBackend{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Close()
+
+	store := chain.NewMemoryStore()
+	genesis, _, err := v.SealBlock(types.NewGenesisBlock(genesisCfg), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, becameTip, err := v.InsertBlock(store, genesis); err != nil {
+		t.Fatal(err)
+	} else if !becameTip {
+		t.Fatalf("expected genesis to become tip")
+	}
+
+	mainHeader := testBlockHeader(chainCfg, genesis)
+	mainBlock, _, err := v.SealBlock(types.Block{Header: mainHeader}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, becameTip, err := v.InsertBlock(store, mainBlock); err != nil {
+		t.Fatal(err)
+	} else if !becameTip {
+		t.Fatalf("expected first child to become tip")
+	}
+
+	forkHeader := testBlockHeader(chainCfg, genesis)
+	var forkBlock types.Block
+	foundNotBest := false
+	for i := int64(0); i < 16; i++ {
+		forkHeader.Timestamp = mainHeader.Timestamp + 1 + i
+		candidate, _, err := v.SealBlock(types.Block{Header: forkHeader}, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if SelectBestChainByTotalWork(mainBlock.BlockHash(), CalcBlockWork(mainBlock.Header.Target), candidate.BlockHash(), CalcBlockWork(candidate.Header.Target)) == mainBlock.BlockHash() {
+			forkBlock = candidate
+			foundNotBest = true
+			break
+		}
+	}
+	if !foundNotBest {
+		t.Fatalf("failed to construct non-tip fork candidate")
+	}
+
+	if _, becameTip, err := v.InsertBlock(store, forkBlock); err != nil {
+		t.Fatal(err)
+	} else if becameTip {
+		t.Fatalf("expected competing fork block to not become tip")
+	}
+	if store.HasBlock(forkBlock.BlockHash()) {
+		t.Fatalf("expected non-tip block to be discarded from store")
+	}
+}
+
 func TestValidationAndMiningReuseSharedDAGForHostVisibleAllocator(t *testing.T) {
 	chainCfg, genesisCfg := testConfig(t)
 	v, err := NewValidator(chainCfg, CPUBackend{}, 1)
