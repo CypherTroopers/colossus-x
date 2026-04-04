@@ -121,7 +121,7 @@ go run ./cmd/colossusx daemon \
   -block-time 500ms \
   -datadir ./data \
   -listen :30333 \
-  -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
+  -bootnodes 161.97.184.220:30333 \
   -node-id node-01 \
   -miner-backend auto \
   -miner-dag-alloc auto
