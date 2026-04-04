@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"sync"
 
 	"colossusx/pkg/types"
@@ -23,19 +24,21 @@ type Store interface {
 }
 
 type MemoryStore struct {
-	mu          sync.RWMutex
-	genesisHash types.Hash
-	currentTip  types.Hash
-	blocks      map[types.Hash]types.Block
-	heights     map[uint64]types.Hash
-	totalWork   map[types.Hash]*big.Int
+	mu               sync.RWMutex
+	genesisHash      types.Hash
+	currentTip       types.Hash
+	blocks           map[types.Hash]types.Block
+	totalWork        map[types.Hash]*big.Int
+	canonicalHeights map[uint64]types.Hash
+	heightIndex      map[uint64][]types.Hash
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		blocks:    make(map[types.Hash]types.Block),
-		heights:   make(map[uint64]types.Hash),
-		totalWork: make(map[types.Hash]*big.Int),
+		blocks:           make(map[types.Hash]types.Block),
+		totalWork:        make(map[types.Hash]*big.Int),
+		canonicalHeights: make(map[uint64]types.Hash),
+		heightIndex:      make(map[uint64][]types.Hash),
 	}
 }
 
@@ -45,13 +48,16 @@ func (m *MemoryStore) StoreBlock(block types.Block, totalWork *big.Int) error {
 
 	hash := block.BlockHash()
 	m.blocks[hash] = block
-	m.heights[block.Header.Height] = hash
 	m.totalWork[hash] = new(big.Int).Set(totalWork)
+	if !containsHash(m.heightIndex[block.Header.Height], hash) {
+		m.heightIndex[block.Header.Height] = append(m.heightIndex[block.Header.Height], hash)
+	}
 	if block.Header.Height == 0 && m.genesisHash == (types.Hash{}) {
 		m.genesisHash = hash
 	}
 	if m.currentTip == (types.Hash{}) {
 		m.currentTip = hash
+		return m.rebuildCanonicalLocked(hash)
 	}
 	return nil
 }
@@ -77,11 +83,14 @@ func (m *MemoryStore) GetHeader(hash types.Hash) (types.BlockHeader, error) {
 func (m *MemoryStore) GetBlockByHeight(height uint64) (types.Block, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	hash, ok := m.heights[height]
+	hash, ok := m.canonicalHeights[height]
 	if !ok {
 		return types.Block{}, fmt.Errorf("height %d: %w", height, ErrBlockNotFound)
 	}
-	block := m.blocks[hash]
+	block, ok := m.blocks[hash]
+	if !ok {
+		return types.Block{}, fmt.Errorf("height %d: %w", height, ErrBlockNotFound)
+	}
 	return block, nil
 }
 
@@ -91,7 +100,10 @@ func (m *MemoryStore) CurrentTip() (types.Block, *big.Int, error) {
 	if m.currentTip == (types.Hash{}) {
 		return types.Block{}, nil, ErrBlockNotFound
 	}
-	block := m.blocks[m.currentTip]
+	block, ok := m.blocks[m.currentTip]
+	if !ok {
+		return types.Block{}, nil, ErrBlockNotFound
+	}
 	work := new(big.Int)
 	if tw, ok := m.totalWork[m.currentTip]; ok {
 		work.Set(tw)
@@ -106,7 +118,7 @@ func (m *MemoryStore) SetCurrentTip(hash types.Hash) error {
 		return ErrBlockNotFound
 	}
 	m.currentTip = hash
-	return nil
+	return m.rebuildCanonicalLocked(hash)
 }
 
 func (m *MemoryStore) TotalWork(hash types.Hash) (*big.Int, error) {
@@ -124,4 +136,45 @@ func (m *MemoryStore) HasBlock(hash types.Hash) bool {
 	defer m.mu.RUnlock()
 	_, ok := m.blocks[hash]
 	return ok
+}
+
+func (m *MemoryStore) rebuildCanonicalLocked(tip types.Hash) error {
+	canonical := make(map[uint64]types.Hash)
+	seen := make(map[types.Hash]struct{})
+	cursor := tip
+	for {
+		if _, ok := seen[cursor]; ok {
+			return fmt.Errorf("canonical rebuild loop detected")
+		}
+		seen[cursor] = struct{}{}
+		block, ok := m.blocks[cursor]
+		if !ok {
+			return ErrBlockNotFound
+		}
+		canonical[block.Header.Height] = cursor
+		if block.Header.Height == 0 {
+			break
+		}
+		cursor = block.Header.ParentHash
+	}
+	m.canonicalHeights = canonical
+	return nil
+}
+
+func containsHash(list []types.Hash, target types.Hash) bool {
+	for _, item := range list {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
+func sortedHeights(in map[uint64]types.Hash) []uint64 {
+	out := make([]uint64, 0, len(in))
+	for h := range in {
+		out = append(out, h)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }
