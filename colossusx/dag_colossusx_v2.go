@@ -2,6 +2,7 @@ package colossusx
 
 import (
 	"encoding/binary"
+	"io"
 	"runtime"
 	"sync"
 
@@ -39,9 +40,9 @@ func colossusXCacheEntriesForSpec(spec Spec) int {
 func buildColossusXV2SeedCache(seed []byte, entries int) [][64]byte {
 	cache := make([][64]byte, entries)
 	s := sha3.Sum256(seed)
-	cache[0] = sha3.Sum512(s[:])
+	cache[0] = blake3Expand64(s[:])
 	for i := 1; i < entries; i++ {
-		cache[i] = sha3.Sum512(cache[i-1][:])
+		cache[i] = blake3Expand64(cache[i-1][:])
 	}
 	for pass := 0; pass < colossusXSeedCachePasses; pass++ {
 		for i := 0; i < entries; i++ {
@@ -50,7 +51,7 @@ func buildColossusXV2SeedCache(seed []byte, entries int) [][64]byte {
 			for j := 0; j < 64; j++ {
 				x[j] = cache[i][j] ^ cache[target][j]
 			}
-			cache[i] = sha3.Sum512(x[:])
+			cache[i] = blake3Expand64(x[:])
 		}
 	}
 	return cache
@@ -65,7 +66,7 @@ func colossusXNodeInto(index uint64, out []byte, cache [][64]byte) {
 	for i := 0; i < 8; i++ {
 		initialIn[i] ^= idx[i]
 	}
-	mix := sha3.Sum512(initialIn[:])
+	mix := blake3Expand64(initialIn[:])
 	for j := uint32(0); j < colossusXCellCacheLookups; j++ {
 		mi := mix[j%64]
 		cacheIndex := fnv1a32(uint32(index)^j, uint32(mi)) % uint32(len(cache))
@@ -73,12 +74,20 @@ func colossusXNodeInto(index uint64, out []byte, cache [][64]byte) {
 		for k := 0; k < 64; k++ {
 			x[k] = mix[k] ^ cache[cacheIndex][k]
 		}
-		mix = sha3.Sum512(x[:])
+		mix = blake3Expand64(x[:])
 	}
 	keyed, _ := blake3.NewKeyed(mix[:32])
 	_, _ = keyed.Write(mix[:])
 	_, _ = keyed.Write(idx[:])
 	_, _ = keyed.Digest().Read(out)
+}
+
+func blake3Expand64(in []byte) [64]byte {
+	var out [64]byte
+	h := blake3.New()
+	_, _ = h.Write(in)
+	_, _ = io.ReadFull(h.Digest(), out[:])
+	return out
 }
 
 func colossusXNode(index uint64, nodeSize uint64, cache [][64]byte) []byte {

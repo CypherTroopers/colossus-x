@@ -167,8 +167,9 @@ func VerifyColossusXSolution(spec Spec, header []byte, target Target, merkleRoot
 		if !VerifyMerkleProof(merkleRoot, leaf, int(c.Index), c.Proof) {
 			return errors.New("invalid mining merkle proof")
 		}
-		mix = colossusXRoundMix(mix, c.Data)
+		mix = colossusXRoundFold(mix, c.Data)
 	}
+	mix = sha3.Sum512(mix[:])
 	if mix != solution.MixDigest {
 		return errors.New("mix digest mismatch")
 	}

@@ -555,3 +555,21 @@ func TestValidateHeaderRejectsIncorrectEpochSeed(t *testing.T) {
 		t.Fatal("expected epoch seed mismatch")
 	}
 }
+
+func TestPrewarmMiningDAGAtHeightCachesSharedDAG(t *testing.T) {
+	chainCfg, _ := testConfig(t)
+	v, err := NewValidator(chainCfg, CPUBackend{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Close()
+	if v.SharedCacheSize() != 0 {
+		t.Fatalf("initial shared cache size=%d want=0", v.SharedCacheSize())
+	}
+	if err := v.PrewarmMiningDAGAtHeight(chainCfg.Spec.EpochBlocks); err != nil {
+		t.Fatalf("PrewarmMiningDAGAtHeight: %v", err)
+	}
+	if v.SharedCacheSize() != 1 {
+		t.Fatalf("shared cache size=%d want=1", v.SharedCacheSize())
+	}
+}

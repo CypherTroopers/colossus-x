@@ -332,6 +332,26 @@ func (v *Validator) SealBlock(block types.Block, maxNonces uint64) (types.Block,
 	return block, res, nil
 }
 
+// PrewarmMiningDAGAtHeight prepares and caches the mining DAG (and colossusx
+// Merkle root when applicable) for the provided chain height. This is intended
+// for daemon-side background warmup while mining the current epoch.
+func (v *Validator) PrewarmMiningDAGAtHeight(height uint64) error {
+	spec := v.config.Spec.ResolvedForHeight(height)
+	header := types.BlockHeader{
+		Height:       height,
+		EpochSeed:    types.EpochSeedForHeight(spec, height),
+		DAGSizeBytes: spec.DAGSizeBytes,
+	}
+	dag, err := v.sharedMiningDAGForHeader(header)
+	if err != nil {
+		return err
+	}
+	if spec.AlgorithmVersion >= 2 || spec.Mode == cx.ModeColossusX {
+		_ = v.merkleRootForDAG(header, dag)
+	}
+	return nil
+}
+
 type sealSkipPrepareBackend struct{ cx.HashBackend }
 
 func (b sealSkipPrepareBackend) Prepare(*cx.DAG) error { return nil }

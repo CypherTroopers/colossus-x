@@ -7,7 +7,7 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-const ColossusXAuditCellCount = 32
+const ColossusXAuditCellCount = 16
 
 type ColossusXTrace struct {
 	InitialHash  [64]byte
@@ -43,8 +43,9 @@ func ColossusXTraceHash(spec Spec, header []byte, nonce Nonce, dag DAGAccessor) 
 		index := uint64(fnv1a32(uint32(round), binary.LittleEndian.Uint32(mix[:4]))) % dag.NodeCount()
 		accessed = append(accessed, uint32(index))
 		dag.ReadNode(index, cell)
-		mix = colossusXRoundMix(mix, cell)
+		mix = colossusXRoundFold(mix, cell)
 	}
+	mix = sha3.Sum512(mix[:])
 
 	finalInput := make([]byte, 0, len(initial)+len(mix))
 	finalInput = append(finalInput, initial[:]...)
@@ -82,7 +83,7 @@ func ColossusXAuditIndicesFromSolutionHash(solutionHash [32]byte, dagCellCount u
 	return ColossusXAuditIndices(solutionHash, dagCellCount, count)
 }
 
-func colossusXRoundMix(mix [64]byte, cell []byte) [64]byte {
+func colossusXRoundFold(mix [64]byte, cell []byte) [64]byte {
 	words := [16]uint32{}
 	for i := range words {
 		words[i] = binary.LittleEndian.Uint32(mix[i*4:])
@@ -98,7 +99,7 @@ func colossusXRoundMix(mix [64]byte, cell []byte) [64]byte {
 	for i := range words {
 		binary.LittleEndian.PutUint32(folded[i*4:], words[i])
 	}
-	return sha3.Sum512(folded[:])
+	return folded
 }
 
 func fnv1a32(a, b uint32) uint32 {
