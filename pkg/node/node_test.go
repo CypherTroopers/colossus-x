@@ -135,6 +135,42 @@ func TestNodeCollectBlocksAndApplySyncBlocks(t *testing.T) {
 	}
 }
 
+func TestInitGenesisStoresDeterministicUnsealedGenesis(t *testing.T) {
+	spec := cx.ColossusXSpecWithGrowth(1024*1024, cx.DefaultDAGGrowthBytesPerEpoch)
+	target, err := cx.ParseTargetHex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chainCfg := types.ChainConfig{NetworkID: "genesis-lite", Spec: spec}
+	genesisCfg := types.GenesisConfig{ChainID: "genesis-lite", Message: "sync", Timestamp: time.Now().Unix() - 1, Bits: target, Spec: spec}
+	validator, err := consensus.NewValidator(chainCfg, consensus.CPUBackend{}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer validator.Close()
+	n, err := New(Config{
+		Chain:     chainCfg,
+		Genesis:   genesisCfg,
+		Mine:      false,
+		MaxNonces: 32,
+		Logf:      func(string, ...any) {},
+	}, validator, chain.NewMemoryStore())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	genesis, err := n.InitGenesis()
+	if err != nil {
+		t.Fatalf("InitGenesis: %v", err)
+	}
+	if genesis.Header.Nonce != 0 {
+		t.Fatalf("expected unsealed genesis nonce=0, got %d", genesis.Header.Nonce)
+	}
+	if genesis.ColossusXSolution != nil || genesis.ColossusXSolutionCompact != nil {
+		t.Fatal("expected unsealed genesis to have no colossusx solution payload")
+	}
+}
+
 func TestParseBootnodes(t *testing.T) {
 	got := ParseBootnodes(" 127.0.0.1:30333, ,127.0.0.1:30334 ")
 	want := []string{"127.0.0.1:30333", "127.0.0.1:30334"}

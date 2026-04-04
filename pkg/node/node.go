@@ -98,19 +98,15 @@ func (n *Node) InitGenesis() (types.Block, error) {
 		return tip, nil
 	}
 	genesis := types.NewGenesisBlock(n.cfg.Genesis)
-	sealed, res, err := n.validator.SealBlock(genesis, n.cfg.MaxNonces)
-	if err != nil {
+	work := consensus.CalcBlockWork(genesis.Header.Target)
+	if err := n.store.StoreBlock(genesis, work); err != nil {
 		return types.Block{}, err
 	}
-	work := consensus.CalcBlockWork(sealed.Header.Target)
-	if err := n.store.StoreBlock(sealed, work); err != nil {
+	if err := n.store.SetCurrentTip(genesis.BlockHash()); err != nil {
 		return types.Block{}, err
 	}
-	if err := n.store.SetCurrentTip(sealed.BlockHash()); err != nil {
-		return types.Block{}, err
-	}
-	n.cfg.Logf("genesis initialized hash=%s nonce=%d hashes=%d", sealed.BlockHash().String(), sealed.Header.Nonce, res.Hashes)
-	return sealed, nil
+	n.cfg.Logf("genesis initialized (deterministic) hash=%s nonce=%d", genesis.BlockHash().String(), genesis.Header.Nonce)
+	return genesis, nil
 }
 
 func (n *Node) Run(ctx context.Context) error {
