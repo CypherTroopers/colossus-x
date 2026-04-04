@@ -114,6 +114,7 @@ const (
 const (
 	daemonAutoBenchmarkDAGBytes uint64 = 64 * 1024 * 1024
 	daemonAutoBenchmarkNonces   uint64 = 4096
+	daemonFixedBlockTime               = 10 * time.Minute
 )
 
 var daemonAutoBenchmarkHeader = []byte("colossusx-daemon-auto-backend-benchmark")
@@ -187,15 +188,12 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 	fs := flag.NewFlagSet("colossusx daemon", flag.ContinueOnError)
 	modeName := fs.String("mode", string(cx.ModeColossusX), "chain mode (colossusx only)")
 	networkID := fs.String("network", "devnet", "network identifier")
-	initialDAGMiB := fs.Uint64("initial-dag-mib", cx.ColossusXInitialDAGSizeBytes/(1024*1024), "initial DAG size in MiB")
-	dagMiB := fs.Uint64("dag-mib", 0, "deprecated alias for -initial-dag-mib")
 	dagGrowthMiB := fs.Uint64("dag-growth-mib-per-epoch", cx.DefaultDAGGrowthBytesPerEpoch/(1024*1024), "DAG growth per epoch in MiB")
 	nodeRoleName := fs.String("node-role", string(nodeRoleFull), "node role: full, miner, or light")
 	mine := fs.Bool("mine", true, "enable local mining loop")
 	noMine := fs.Bool("no-mine", false, "disable local mining loop")
 	workers := fs.Int("workers", runtime.NumCPU(), "mining workers")
 	maxNonces := fs.Uint64("max-nonces", 500000, "maximum nonce range per block template")
-	blockTime := fs.Duration("block-time", 500*time.Millisecond, "delay between mined blocks")
 	genesisMessage := fs.String("genesis-message", "colossusx devnet genesis", "genesis message")
 	genesisFile := fs.String("genesis-file", "", "path to genesis JSON file (recommended for shared chain bootstrap)")
 	dataDir := fs.String("datadir", filepath.Join(".", "data"), "node data directory")
@@ -209,9 +207,6 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 		return daemonConfig{}, err
 	}
 
-	if *dagMiB != 0 {
-		*initialDAGMiB = *dagMiB
-	}
 	role, err := parseNodeRole(*nodeRoleName)
 	if err != nil {
 		return daemonConfig{}, err
@@ -232,10 +227,6 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 	switch mode {
 	case cx.ModeColossusX:
 		spec = cx.ColossusXSpec()
-		if *initialDAGMiB != cx.ColossusXInitialDAGSizeBytes/(1024*1024) {
-			spec.InitialDAGSizeBytes = (*initialDAGMiB) * 1024 * 1024
-			spec.DAGSizeBytes = spec.InitialDAGSizeBytes
-		}
 		if *dagGrowthMiB != cx.DefaultDAGGrowthBytesPerEpoch/(1024*1024) {
 			spec.DAGGrowthBytesPerEpoch = (*dagGrowthMiB) * 1024 * 1024
 		}
@@ -277,6 +268,9 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 		if err != nil {
 			return daemonConfig{}, err
 		}
+		if loadedGenesis.Spec.Mode == cx.ModeColossusX && (loadedGenesis.Spec.InitialDAGSizeBytes != cx.ColossusXInitialDAGSizeBytes || loadedGenesis.Spec.DAGSizeBytes != cx.ColossusXInitialDAGSizeBytes) {
+			return daemonConfig{}, fmt.Errorf("genesis-file initial DAG must be fixed at %d bytes for colossusx daemon", cx.ColossusXInitialDAGSizeBytes)
+		}
 		if flagProvided(fs, "network") && *networkID != loadedGenesis.ChainID {
 			return daemonConfig{}, fmt.Errorf("genesis-file chain_id %q does not match -network %q", loadedGenesis.ChainID, *networkID)
 		}
@@ -285,12 +279,6 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 		}
 		if flagProvided(fs, "target") && target != loadedGenesis.Bits {
 			return daemonConfig{}, fmt.Errorf("genesis-file target does not match -target")
-		}
-		if flagProvided(fs, "initial-dag-mib") && spec.InitialDAGSizeBytes != loadedGenesis.Spec.InitialDAGSizeBytes {
-			return daemonConfig{}, fmt.Errorf("genesis-file initial_dag_size_bytes does not match -initial-dag-mib")
-		}
-		if flagProvided(fs, "dag-mib") && spec.InitialDAGSizeBytes != loadedGenesis.Spec.InitialDAGSizeBytes {
-			return daemonConfig{}, fmt.Errorf("genesis-file initial_dag_size_bytes does not match -dag-mib")
 		}
 		if flagProvided(fs, "dag-growth-mib-per-epoch") && spec.DAGGrowthBytesPerEpoch != loadedGenesis.Spec.DAGGrowthBytesPerEpoch {
 			return daemonConfig{}, fmt.Errorf("genesis-file dag_growth_bytes_per_epoch does not match -dag-growth-mib-per-epoch")
@@ -301,7 +289,7 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 		genesis = loadedGenesis
 		chainCfg = types.ChainConfig{NetworkID: loadedGenesis.ChainID, Spec: loadedGenesis.Spec}
 	}
-	return daemonConfig{Chain: chainCfg, Genesis: genesis, GenesisFile: *genesisFile, NodeRole: role, Mine: *mine, Workers: *workers, MaxNonces: *maxNonces, BlockTime: *blockTime, DataDir: *dataDir, ListenAddr: *listenAddr, Bootnodes: node.ParseBootnodes(*bootnodes), NodeID: *nodeID, MinerBackend: backendMode, AutoBackend: autoBackend, MinerDAGAlloc: *minerDAGAlloc}, nil
+	return daemonConfig{Chain: chainCfg, Genesis: genesis, GenesisFile: *genesisFile, NodeRole: role, Mine: *mine, Workers: *workers, MaxNonces: *maxNonces, BlockTime: daemonFixedBlockTime, DataDir: *dataDir, ListenAddr: *listenAddr, Bootnodes: node.ParseBootnodes(*bootnodes), NodeID: *nodeID, MinerBackend: backendMode, AutoBackend: autoBackend, MinerDAGAlloc: *minerDAGAlloc}, nil
 }
 
 func parseNodeRole(raw string) (nodeRole, error) {

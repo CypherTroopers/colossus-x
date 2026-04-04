@@ -66,7 +66,7 @@ func TestParseDaemonFlagsUsesGenesisFile(t *testing.T) {
 		Timestamp:            1704067200,
 		TargetHex:            "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
 		Mode:                 "colossusx",
-		InitialDAGMiB:        32,
+		InitialDAGMiB:        cx.ColossusXInitialDAGSizeBytes / (1024 * 1024),
 		DAGGrowthMiBPerEpoch: 8,
 		ExtraData:            "mode=colossusx",
 	}
@@ -82,8 +82,26 @@ func TestParseDaemonFlagsUsesGenesisFile(t *testing.T) {
 	if cfg.Genesis.Timestamp != doc.Timestamp {
 		t.Fatalf("genesis timestamp mismatch: got=%d want=%d", cfg.Genesis.Timestamp, doc.Timestamp)
 	}
-	if cfg.Chain.Spec.InitialDAGSizeBytes != 32*1024*1024 {
+	if cfg.Chain.Spec.InitialDAGSizeBytes != cx.ColossusXInitialDAGSizeBytes {
 		t.Fatalf("initial dag mismatch: got=%d", cfg.Chain.Spec.InitialDAGSizeBytes)
+	}
+}
+
+func TestParseDaemonFlagsRejectsGenesisFileWithNonFixedInitialDAG(t *testing.T) {
+	doc := genesisFileDocument{
+		ChainID:              "devnet-shared",
+		Message:              "shared genesis",
+		Timestamp:            1704067200,
+		TargetHex:            "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+		Mode:                 "colossusx",
+		InitialDAGMiB:        32,
+		DAGGrowthMiBPerEpoch: 8,
+		ExtraData:            "mode=colossusx",
+	}
+	path := writeGenesisFile(t, doc)
+
+	if _, err := parseDaemonFlags([]string{"-genesis-file", path}); err == nil {
+		t.Fatal("expected fixed initial DAG validation error")
 	}
 }
 

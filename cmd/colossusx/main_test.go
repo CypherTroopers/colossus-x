@@ -51,6 +51,21 @@ func TestParseDaemonFlagsDefaultsToFullRoleWithoutMining(t *testing.T) {
 	if cfg.Mine {
 		t.Fatal("expected full role to disable mining")
 	}
+	if cfg.BlockTime != 10*time.Minute {
+		t.Fatalf("expected fixed block time 10m, got %s", cfg.BlockTime)
+	}
+	if cfg.Chain.Spec.InitialDAGSizeBytes != cx.ColossusXInitialDAGSizeBytes {
+		t.Fatalf("expected fixed initial DAG size %d, got %d", cx.ColossusXInitialDAGSizeBytes, cfg.Chain.Spec.InitialDAGSizeBytes)
+	}
+}
+
+func TestParseDaemonFlagsRejectsRemovedBlockAndInitialDagFlags(t *testing.T) {
+	if _, err := parseDaemonFlags([]string{"-block-time=1s"}); err == nil {
+		t.Fatal("expected -block-time to be rejected")
+	}
+	if _, err := parseDaemonFlags([]string{"-initial-dag-mib=1024"}); err == nil {
+		t.Fatal("expected -initial-dag-mib to be rejected")
+	}
 }
 
 func TestParseDaemonFlagsMinerRoleEnablesMining(t *testing.T) {
