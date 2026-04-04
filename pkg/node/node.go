@@ -113,6 +113,9 @@ func (n *Node) Run(ctx context.Context) error {
 	if _, err := n.InitGenesis(); err != nil {
 		return err
 	}
+	if err := n.ensureStartupDAGReady(); err != nil {
+		return err
+	}
 	if err := n.p2p.Start(ctx); err != nil {
 		return err
 	}
@@ -148,6 +151,22 @@ func (n *Node) Run(ctx context.Context) error {
 		case <-timer.C:
 		}
 	}
+}
+
+func (n *Node) ensureStartupDAGReady() error {
+	if n.validator.LightValidationEnabled() {
+		return nil
+	}
+	tip, _, err := n.store.CurrentTip()
+	if err != nil {
+		return fmt.Errorf("startup dag prepare tip lookup failed: %w", err)
+	}
+	nextHeight := tip.Header.Height + 1
+	if err := n.validator.PrewarmMiningDAGAtHeight(nextHeight); err != nil {
+		return fmt.Errorf("startup dag prepare failed height=%d: %w", nextHeight, err)
+	}
+	n.cfg.Logf("startup dag ready height=%d", nextHeight)
+	return nil
 }
 
 func (n *Node) mineNextBlock() (types.Block, cx.MineResult, error) {
