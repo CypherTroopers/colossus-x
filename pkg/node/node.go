@@ -116,6 +116,7 @@ func (n *Node) Run(ctx context.Context) error {
 	if err := n.p2p.Start(ctx); err != nil {
 		return err
 	}
+	n.scheduleStartupPrewarm()
 	if !n.cfg.Mine {
 		<-ctx.Done()
 		return ctx.Err()
@@ -186,29 +187,55 @@ func nextEpochStartHeight(fromHeight uint64, epochBlocks uint64) (uint64, bool) 
 	return next, true
 }
 
+func epochStartHeight(height uint64, epochBlocks uint64) uint64 {
+	if epochBlocks == 0 {
+		return height
+	}
+	return (height / epochBlocks) * epochBlocks
+}
+
+func (n *Node) scheduleStartupPrewarm() {
+	if n.cfg.Mine || n.validator.LightValidationEnabled() {
+		return
+	}
+	tip, _, err := n.store.CurrentTip()
+	if err != nil {
+		n.cfg.Logf("dag prewarm skipped: tip lookup failed: %v", err)
+		return
+	}
+	nextHeight := tip.Header.Height + 1
+	n.scheduleEpochPrewarm(nextHeight)
+	n.scheduleNextEpochPrewarm(nextHeight)
+}
+
+func (n *Node) scheduleEpochPrewarm(height uint64) {
+	prewarmKey := epochStartHeight(height, n.cfg.Chain.Spec.EpochBlocks)
+	n.prewarmMu.Lock()
+	if _, exists := n.prewarmed[prewarmKey]; exists {
+		n.prewarmMu.Unlock()
+		return
+	}
+	n.prewarmed[prewarmKey] = struct{}{}
+	n.prewarmMu.Unlock()
+
+	go func(height uint64, key uint64) {
+		if err := n.validator.PrewarmMiningDAGAtHeight(height); err != nil {
+			n.cfg.Logf("dag prewarm failed height=%d err=%v", height, err)
+			n.prewarmMu.Lock()
+			delete(n.prewarmed, key)
+			n.prewarmMu.Unlock()
+			return
+		}
+		n.cfg.Logf("dag prewarm ready height=%d", height)
+	}(height, prewarmKey)
+}
+
 func (n *Node) scheduleNextEpochPrewarm(fromHeight uint64) {
 	nextEpoch, ok := shouldPrewarmNextEpoch(fromHeight, n.cfg.Chain.Spec.EpochBlocks, daemonEpochPrewarmLeadBlocks)
 	if !ok {
 		return
 	}
-	n.prewarmMu.Lock()
-	if _, exists := n.prewarmed[nextEpoch]; exists {
-		n.prewarmMu.Unlock()
-		return
-	}
-	n.prewarmed[nextEpoch] = struct{}{}
-	n.prewarmMu.Unlock()
-
-	go func(height uint64) {
-		if err := n.validator.PrewarmMiningDAGAtHeight(height); err != nil {
-			n.cfg.Logf("dag prewarm failed height=%d err=%v", height, err)
-			n.prewarmMu.Lock()
-			delete(n.prewarmed, height)
-			n.prewarmMu.Unlock()
-			return
-		}
-		n.cfg.Logf("dag prewarm ready height=%d", height)
-	}(nextEpoch)
+	n.scheduleEpochPrewarm(nextEpoch)
 }
 
 func shouldPrewarmNextEpoch(fromHeight uint64, epochBlocks uint64, leadBlocks uint64) (uint64, bool) {
