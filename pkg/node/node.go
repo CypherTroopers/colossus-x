@@ -42,6 +42,8 @@ type Node struct {
 	mu        sync.RWMutex
 }
 
+const syncBatchLimit uint64 = 128
+
 func New(cfg Config, validator *consensus.Validator, store chain.Store) (*Node, error) {
 	if store == nil {
 		store = chain.NewMemoryStore()
@@ -74,6 +76,8 @@ func New(cfg Config, validator *consensus.Validator, store chain.Store) (*Node, 
 			OnPing:             n.onPing,
 			OnPong:             n.onPong,
 			OnNewBlock:         n.onNewBlock,
+			OnSyncRequest:      n.onSyncRequest,
+			OnSyncResponse:     n.onSyncResponse,
 		},
 	})
 	return n, nil
@@ -192,6 +196,15 @@ func (n *Node) onHello(peer *p2p.Peer, msg p2p.HelloMessage) {
 
 func (n *Node) onStatus(peer *p2p.Peer, msg p2p.StatusMessage) {
 	n.cfg.Logf("status received peer=%s height=%d hash=%s total_work=%s", msg.Status.PeerID, msg.Status.BestHeight, msg.Status.BestHash.String(), msg.Status.TotalWork)
+	tip, _, err := n.store.CurrentTip()
+	if err != nil {
+		n.cfg.Logf("status local tip lookup failed: %v", err)
+		return
+	}
+	if msg.Status.BestHeight <= tip.Header.Height {
+		return
+	}
+	n.requestSync(peer, tip.Header.Height+1)
 }
 
 func (n *Node) onPing(peer *p2p.Peer, msg p2p.PingMessage) {
@@ -218,6 +231,83 @@ func (n *Node) onNewBlock(peer *p2p.Peer, msg p2p.NewBlockMessage) {
 	if becameTip {
 		go n.broadcastStatus()
 	}
+}
+
+func (n *Node) onSyncRequest(peer *p2p.Peer, msg p2p.SyncRequestMessage) {
+	limit := msg.Limit
+	if limit == 0 || limit > syncBatchLimit {
+		limit = syncBatchLimit
+	}
+	blocks := n.collectBlocks(msg.FromHeight, limit)
+	if err := peer.Send(p2p.Message{Type: p2p.MessageSyncRs, Body: p2p.SyncResponseMessage{Blocks: blocks}}); err != nil {
+		n.cfg.Logf("sync response send failed peer=%s err=%v", peer.ID, err)
+	}
+}
+
+func (n *Node) onSyncResponse(peer *p2p.Peer, msg p2p.SyncResponseMessage) {
+	if len(msg.Blocks) == 0 {
+		return
+	}
+	tip, _, err := n.store.CurrentTip()
+	if err != nil {
+		n.cfg.Logf("sync tip lookup failed: %v", err)
+		return
+	}
+	applied := n.applySyncBlocks(peer.ID, msg.Blocks)
+	if applied == 0 && peer.Status.BestHeight <= tip.Header.Height {
+		return
+	}
+	tip, _, err = n.store.CurrentTip()
+	if err != nil {
+		n.cfg.Logf("sync tip lookup failed: %v", err)
+		return
+	}
+	if peer.Status.BestHeight > tip.Header.Height {
+		n.requestSync(peer, tip.Header.Height+1)
+	}
+}
+
+func (n *Node) requestSync(peer *p2p.Peer, fromHeight uint64) {
+	if err := peer.Send(p2p.Message{Type: p2p.MessageSyncRq, Body: p2p.SyncRequestMessage{FromHeight: fromHeight, Limit: syncBatchLimit}}); err != nil {
+		n.cfg.Logf("sync request send failed peer=%s from=%d err=%v", peer.ID, fromHeight, err)
+	}
+}
+
+func (n *Node) collectBlocks(fromHeight, limit uint64) []types.Block {
+	if limit == 0 {
+		return nil
+	}
+	blocks := make([]types.Block, 0, limit)
+	for i := uint64(0); i < limit; i++ {
+		height := fromHeight + i
+		block, err := n.store.GetBlockByHeight(height)
+		if err != nil {
+			break
+		}
+		blocks = append(blocks, block)
+	}
+	return blocks
+}
+
+func (n *Node) applySyncBlocks(peerID string, blocks []types.Block) int {
+	applied := 0
+	for _, block := range blocks {
+		hash := block.BlockHash()
+		if hash == (types.Hash{}) || n.store.HasBlock(hash) {
+			continue
+		}
+		_, becameTip, err := n.validator.InsertBlock(n.store, block)
+		if err != nil {
+			n.cfg.Logf("sync block rejected peer=%s height=%d hash=%s err=%v", peerID, block.Header.Height, hash.String(), err)
+			continue
+		}
+		applied++
+		n.cfg.Logf("sync block accepted peer=%s height=%d hash=%s became_tip=%t", peerID, block.Header.Height, hash.String(), becameTip)
+	}
+	if applied > 0 {
+		go n.broadcastStatus()
+	}
+	return applied
 }
 
 func (n *Node) sendStatus(peer *p2p.Peer) {
