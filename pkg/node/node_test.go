@@ -9,6 +9,7 @@ import (
 	cx "colossusx/colossusx"
 	"colossusx/pkg/chain"
 	"colossusx/pkg/consensus"
+	"colossusx/pkg/p2p"
 	"colossusx/pkg/types"
 )
 
@@ -255,6 +256,58 @@ func TestShouldPrewarmNextEpoch(t *testing.T) {
 			}
 			if got != tc.wantHeight {
 				t.Fatalf("height=%d want=%d", got, tc.wantHeight)
+			}
+		})
+	}
+}
+
+func TestInitialSyncReady(t *testing.T) {
+	tests := []struct {
+		name              string
+		localTip          uint64
+		peers             []*p2p.Peer
+		wantReady         bool
+		wantRemoteBest    uint64
+		wantPeersWithStat int
+	}{
+		{
+			name:           "no peers starts mining immediately",
+			localTip:       0,
+			peers:          nil,
+			wantReady:      true,
+			wantRemoteBest: 0,
+		},
+		{
+			name:      "connected peers without status wait for sync metadata",
+			localTip:  0,
+			peers:     []*p2p.Peer{{ID: "p1"}, {ID: "p2"}},
+			wantReady: false,
+		},
+		{
+			name:      "ready once local tip catches known remote best",
+			localTip:  5,
+			peers:     []*p2p.Peer{{Status: types.PeerStatus{PeerID: "p1", BestHeight: 3}}, {Status: types.PeerStatus{PeerID: "p2", BestHeight: 5}}},
+			wantReady: true, wantRemoteBest: 5, wantPeersWithStat: 2,
+		},
+		{
+			name:      "not ready while local tip is behind",
+			localTip:  4,
+			peers:     []*p2p.Peer{{Status: types.PeerStatus{PeerID: "p1", BestHeight: 6}}},
+			wantReady: false, wantRemoteBest: 6, wantPeersWithStat: 1,
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			ready, remoteBest, peersWithStatus := initialSyncReady(tc.localTip, tc.peers)
+			if ready != tc.wantReady {
+				t.Fatalf("ready=%v want=%v", ready, tc.wantReady)
+			}
+			if remoteBest != tc.wantRemoteBest {
+				t.Fatalf("remoteBest=%d want=%d", remoteBest, tc.wantRemoteBest)
+			}
+			if peersWithStatus != tc.wantPeersWithStat {
+				t.Fatalf("peersWithStatus=%d want=%d", peersWithStatus, tc.wantPeersWithStat)
 			}
 		})
 	}
