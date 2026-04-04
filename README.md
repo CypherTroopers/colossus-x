@@ -118,7 +118,7 @@ go run ./cmd/colossusx daemon \
   -node-role miner \
   -workers 16 \
   -max-nonces 500000 \
-  -block-time 500ms \
+  -block-time 18000ms \
   -datadir ./data \
   -listen :30333 \
   -bootnodes 161.97.184.220:30333 \
@@ -137,7 +137,7 @@ go run ./cmd/colossusx daemon \
   -node-role full \
   -workers 16 \
   -max-nonces 500000 \
-  -block-time 500ms \
+  -block-time 18000ms \
   -datadir ./data \
   -listen :30333 \
   -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
@@ -156,7 +156,7 @@ go run ./cmd/colossusx daemon \
   -node-role light \
   -workers 16 \
   -max-nonces 500000 \
-  -block-time 500ms \
+  -block-time 18000ms \
   -datadir ./data \
   -listen :30333 \
   -bootnodes 161.97.184.220:30333 \
