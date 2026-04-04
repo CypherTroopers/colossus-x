@@ -113,11 +113,21 @@ func (n *Node) Run(ctx context.Context) error {
 	if _, err := n.InitGenesis(); err != nil {
 		return err
 	}
-	if err := n.ensureStartupDAGReady(); err != nil {
-		return err
+	if !n.cfg.Mine {
+		if err := n.ensureStartupDAGReady(); err != nil {
+			return err
+		}
 	}
 	if err := n.p2p.Start(ctx); err != nil {
 		return err
+	}
+	if err := n.waitForInitialSync(ctx); err != nil {
+		return err
+	}
+	if n.cfg.Mine {
+		if err := n.ensureStartupDAGReady(); err != nil {
+			return err
+		}
 	}
 	n.scheduleStartupPrewarm()
 	if !n.cfg.Mine {
@@ -151,6 +161,50 @@ func (n *Node) Run(ctx context.Context) error {
 		case <-timer.C:
 		}
 	}
+}
+
+func (n *Node) waitForInitialSync(ctx context.Context) error {
+	if !n.cfg.Mine {
+		return nil
+	}
+	ticker := time.NewTicker(300 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		tip, _, err := n.store.CurrentTip()
+		if err != nil {
+			return fmt.Errorf("initial sync tip lookup failed: %w", err)
+		}
+		ready, remoteBest, peersWithStatus := initialSyncReady(tip.Header.Height, n.p2p.Peers())
+		if ready {
+			n.cfg.Logf("initial sync complete local_height=%d remote_best=%d peers_with_status=%d", tip.Header.Height, remoteBest, peersWithStatus)
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func initialSyncReady(localTip uint64, peers []*p2p.Peer) (ready bool, remoteBest uint64, peersWithStatus int) {
+	if len(peers) == 0 {
+		return true, localTip, 0
+	}
+	remoteBest = localTip
+	for _, peer := range peers {
+		if peer.Status.PeerID == "" {
+			continue
+		}
+		peersWithStatus++
+		if peer.Status.BestHeight > remoteBest {
+			remoteBest = peer.Status.BestHeight
+		}
+	}
+	if peersWithStatus == 0 {
+		return false, remoteBest, 0
+	}
+	return localTip >= remoteBest, remoteBest, peersWithStatus
 }
 
 func (n *Node) ensureStartupDAGReady() error {
