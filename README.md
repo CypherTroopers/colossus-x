@@ -65,14 +65,14 @@ Example `configs/devnet/genesis.json`:
   "timestamp": 1710000000,
   "target": "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
   "mode": "colossusx",
-  "initial_dag_mib": 32768,
+  "initial_dag_mib": 3072,
   "dag_growth_mib_per_epoch": 256,
   "alloc": {
-    "alice": 1000000,
-    "bob": 1000000
+    "0x12a8edDcB8b54c7765b45b0298D83fE23A8c547B": 1000000,
+    "0x12a8edDcB8b54c7765b45b0298D83fE23A8c547B": 1000000
   },
   "block_reward": 50,
-  "target_block_time_millis": 18000,
+  "target_block_time_millis": 600000,
   "retarget_interval": 4
 }
 ```
