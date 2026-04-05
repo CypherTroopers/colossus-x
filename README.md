@@ -62,7 +62,7 @@ For real node operation, use the executable form that supports the **`daemon`** 
 Using a built binary (`daemon` subcommand):
 
 ```bash
-./bin/colossusx daemon \
+go run ./cmd/colossusx daemon \
   -mode colossusx \
   -network mainnet \
   -genesis-file ./configs/mainnet/genesis.json \
