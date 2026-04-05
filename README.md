@@ -115,7 +115,6 @@ go run ./cmd/colossusx daemon \
   -block-time 18000ms \
   -datadir ./data/miner-01 \
   -listen :30333 \
-  -bootnodes 161.97.184.220:30333 \
   -node-id miner-01 \
   -coinbase miner-01 \
   -miner-backend auto \
