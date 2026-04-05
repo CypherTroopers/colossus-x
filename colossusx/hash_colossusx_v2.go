@@ -18,6 +18,9 @@ type ColossusXTrace struct {
 }
 
 func ColossusXHash(spec Spec, header []byte, nonce Nonce, dag DAGAccessor) HashResult {
+	if spec.AlgorithmVersion >= ColossusXAlgorithmVersionScratchpad {
+		return ColossusXHashV3(spec, header, nonce, dag)
+	}
 	trace := ColossusXTraceHash(spec, header, nonce, dag)
 	var out HashResult
 	copy(out.Pow256[:], trace.Result[:])
@@ -26,6 +29,9 @@ func ColossusXHash(spec Spec, header []byte, nonce Nonce, dag DAGAccessor) HashR
 }
 
 func ColossusXTraceHash(spec Spec, header []byte, nonce Nonce, dag DAGAccessor) ColossusXTrace {
+	if spec.AlgorithmVersion >= ColossusXAlgorithmVersionScratchpad {
+		return ColossusXTraceHashV3(spec, header, nonce, dag)
+	}
 	var trace ColossusXTrace
 	if dag == nil || dag.NodeCount() == 0 {
 		return trace

@@ -115,6 +115,17 @@ func (s Spec) Validate() error {
 	if growth%s.NodeSize != 0 {
 		return fmt.Errorf("dag growth per epoch must be multiple of node size (%d)", s.NodeSize)
 	}
+	if s.IsAppendOnlyScratchpad() {
+		if s.TileSizeBytes == 0 {
+			return errors.New("scratchpad tile size must be > 0")
+		}
+		if initial%s.TileSizeBytes != 0 {
+			return fmt.Errorf("initial dag size must be multiple of tile size (%d)", s.TileSizeBytes)
+		}
+		if growth%s.TileSizeBytes != 0 {
+			return fmt.Errorf("dag growth per epoch must be multiple of tile size (%d)", s.TileSizeBytes)
+		}
+	}
 	switch s.Mode {
 	case ModeColossusX:
 		// colossusx is the only supported mode.
@@ -154,6 +165,9 @@ func (s Spec) DAGSizeForEpoch(epoch uint64) uint64 {
 }
 
 func (s Spec) DAGSizeForHeight(height uint64) uint64 {
+	if s.IsAppendOnlyScratchpad() {
+		return s.ScratchpadActiveSizeForHeight(height)
+	}
 	if s.EpochBlocks == 0 {
 		return s.DAGSizeForEpoch(0)
 	}
@@ -163,6 +177,9 @@ func (s Spec) DAGSizeForHeight(height uint64) uint64 {
 func (s Spec) ResolvedForHeight(height uint64) Spec {
 	resolved := s
 	resolved.DAGSizeBytes = s.DAGSizeForHeight(height)
+	if resolved.IsAppendOnlyScratchpad() && resolved.ReadsPerHash == 0 {
+		resolved.ReadsPerHash = ColossusXScratchpadReadsPerHash
+	}
 	return resolved
 }
 
