@@ -20,6 +20,11 @@ const (
 	BackendGPU     BackendMode = "gpu"
 )
 
+const (
+	defaultBenchmarkNonces uint64 = 100000
+	defaultBatchChunkSize  uint64 = 4096
+)
+
 type HashBackend interface {
 	Mode() BackendMode
 	Description() string
@@ -60,8 +65,9 @@ func NewMiner(spec Spec, dag *DAG, workers int, backend HashBackend) (*Miner, er
 	}
 	return &Miner{spec: spec, dag: dag, workers: workers, backend: backend}, nil
 }
+
 func (m *Miner) Mine(header []byte, target Target, startNonce Nonce, maxNonces uint64) (MineResult, bool) {
-	if batchBackend, ok := m.backend.(BatchHashBackend); ok {
+	if batchBackend, ok := m.backend.(BatchHashBackend); ok && prefersBatchMining(m.backend) {
 		return m.mineBatch(header, target, startNonce, maxNonces, batchBackend)
 	}
 	start := time.Now()
@@ -123,31 +129,66 @@ func (m *Miner) Mine(header []byte, target Target, startNonce Nonce, maxNonces u
 	hashes := totalHashes.Load()
 	return MineResult{Nonce: msg.nonce, Hashes: hashes, Elapsed: elapsed, HashRate: float64(hashes) / elapsed.Seconds(), Hash256Hex: hex.EncodeToString(msg.hash.Pow256[:]), Hash512Hex: hex.EncodeToString(msg.hash.Full512[:]), Backend: m.backend.Mode()}, true
 }
+
 func (m *Miner) mineBatch(header []byte, target Target, startNonce Nonce, maxNonces uint64, batchBackend BatchHashBackend) (MineResult, bool) {
 	start := time.Now()
-	if maxNonces == 0 {
-		maxNonces = 100000
-	}
-	results, err := batchBackend.HashBatch(header, startNonce, maxNonces, m.dag)
-	if err != nil {
-		return MineResult{}, false
-	}
-	for i, h := range results {
-		if LessOrEqualBE(h.Pow256, target) {
-			elapsed := time.Since(start)
-			hashes := uint64(i + 1)
-			nonce, _ := startNonce.AddUint64(uint64(i))
-			return MineResult{Nonce: nonce, Hashes: hashes, Elapsed: elapsed, HashRate: float64(hashes) / elapsed.Seconds(), Hash256Hex: hex.EncodeToString(h.Pow256[:]), Hash512Hex: hex.EncodeToString(h.Full512[:]), Backend: m.backend.Mode()}, true
+	current := startNonce
+	remaining := maxNonces
+	var totalHashes uint64
+
+	for {
+		batchSize := defaultBatchChunkSize
+		if maxNonces > 0 {
+			if remaining == 0 {
+				return MineResult{}, false
+			}
+			if remaining < batchSize {
+				batchSize = remaining
+			}
+		}
+
+		results, err := batchBackend.HashBatch(header, current, batchSize, m.dag)
+		if err != nil {
+			return MineResult{}, false
+		}
+		if len(results) == 0 {
+			return MineResult{}, false
+		}
+
+		for i, h := range results {
+			totalHashes++
+			if LessOrEqualBE(h.Pow256, target) {
+				nonce, _ := current.AddUint64(uint64(i))
+				elapsed := time.Since(start)
+				return MineResult{Nonce: nonce, Hashes: totalHashes, Elapsed: elapsed, HashRate: float64(totalHashes) / elapsed.Seconds(), Hash256Hex: hex.EncodeToString(h.Pow256[:]), Hash512Hex: hex.EncodeToString(h.Full512[:]), Backend: m.backend.Mode()}, true
+			}
+		}
+
+		advanced := uint64(len(results))
+		if maxNonces > 0 {
+			if advanced >= remaining {
+				return MineResult{}, false
+			}
+			remaining -= advanced
+		}
+		next, ok := current.AddUint64(advanced)
+		if !ok {
+			return MineResult{}, false
+		}
+		current = next
+
+		if advanced < batchSize {
+			return MineResult{}, false
 		}
 	}
-	return MineResult{}, false
 }
+
 func Benchmark(m *Miner, header []byte, startNonce Nonce, maxNonces uint64) MineResult {
 	if maxNonces == 0 {
-		maxNonces = 100000
+		maxNonces = defaultBenchmarkNonces
 	}
 	start := time.Now()
-	if batchBackend, ok := m.backend.(BatchHashBackend); ok {
+	if batchBackend, ok := m.backend.(BatchHashBackend); ok && prefersBatchMining(m.backend) {
 		_, _ = batchBackend.HashBatch(header, startNonce, maxNonces, m.dag)
 	} else {
 		for i := uint64(0); i < maxNonces; i++ {
@@ -160,4 +201,13 @@ func Benchmark(m *Miner, header []byte, startNonce Nonce, maxNonces uint64) Mine
 	}
 	elapsed := time.Since(start)
 	return MineResult{Hashes: maxNonces, Elapsed: elapsed, HashRate: float64(maxNonces) / elapsed.Seconds(), Backend: m.backend.Mode()}
+}
+
+func prefersBatchMining(backend HashBackend) bool {
+	switch backend.Mode() {
+	case BackendCUDA, BackendOpenCL, BackendGPU:
+		return true
+	default:
+		return false
+	}
 }

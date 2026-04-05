@@ -10,7 +10,7 @@ AMD AI Max+ 395 · Nvidia GB10
 
 ## DAG SIZE
 
-80 GB (epoch 0)
+32 GB (epoch 0)
 
 ## HASH CORE
 
@@ -28,7 +28,7 @@ COLOSSUS-X exploits the one resource large unified-memory GPUs have in abundance
 
 **Memory-Hard**
 
-An 80 GB DAG must be resident in VRAM. No compute shortcut can replace the memory reads — bandwidth is the bottleneck, not ALU throughput.
+An 32 GB DAG must be resident in VRAM. No compute shortcut can replace the memory reads — bandwidth is the bottleneck, not ALU throughput.
 
 ### PRINCIPLE 2
 
@@ -59,7 +59,7 @@ The DAG is a massive pseudorandom dataset derived from the blockchain state. It 
 
 | PARAMETER | VALUE | RATIONALE |
 |---|---|---|
-| DAG size (epoch 0) | 80 GB | Exceeds consumer GPUs (≤24 GB), fits AI Max+ (128 GB) and GB10 (128 GB) |
+| DAG size (epoch 0) | 32 GB | Exceeds consumer GPUs (≤24 GB), fits AI Max+ (128 GB) and GB10 (128 GB) |
 | Cell size | 256 bytes | Aligned to GPU cache lines; 4 × 64B sectors |
 | Total cells | ~335,544,320 | 80 GB ÷ 256 B |
 | Epoch length | 7,200 blocks | ~24 h at 12 s block time |
@@ -85,7 +85,7 @@ for round in 0 .. 2:
         cache[i] = SHA3-512(cache[i] ⊕ cache[target])
 ```
 
-### Phase 2 — Full DAG (80 GB)
+### Phase 2 — Full DAG (32 GB)
 
 Each 256-byte DAG cell is derived from 256 pseudorandom cache lookups, mixed with SHA3-512. The lookup pattern depends on intermediate hash state, creating a data-dependent access pattern that resists parallelization of the generation step.
 
@@ -242,7 +242,7 @@ The defense operates at two layers:
 
 ### Layer 1 — Implicit Proof via Mining Loop
 
-The 128 random DAG reads during mining already require the miner to produce valid cell data with Merkle proofs. A miner who doesn't store the DAG must recompute each cell (256 cache lookups × SHA3-512 per cell × 128 cells = ~32,768 extra hash operations per nonce). This alone imposes a >10× performance penalty on shortcutters.
+The 128 random DAG reads during mining already require the miner to produce valid cell data with Merkle proofs. A miner who doesn't store the DAG must recompute each cell (128 cache lookups × SHA3-512 per cell × 128 cells = ~32,768 extra hash operations per nonce). This alone imposes a >10× performance penalty on shortcutters.
 
 ### Layer 2 — Explicit Random Audit Cells
 
@@ -268,8 +268,7 @@ Cost to shortcutter: With K=32 audit cells, a shortcutter must recompute 32 unpr
 
 | STRATEGY | VRAM NEEDED | OVERHEAD PER NONCE | EFFECTIVE HASHRATE PENALTY |
 |---|---|---|---|
-| Honest Full DAG | 80 GB | 128 memory reads | None (baseline) |
-| Partial 50% DAG | 40 GB | ~64 recomputes + 128 reads | ~5× slower |
+| Honest Full DAG | 32 GB | 128 memory reads | None (baseline) |
 | Full shortcut Cache only | 512 MB | 128 recomputes + 32 audit recomputes | >50× slower |
 
 ## 06 Hash Pipeline Detail
@@ -326,13 +325,8 @@ Every 7,200 blocks (~24 hours at 12 s/block), the DAG seed changes and a new DAG
 ### Growth Schedule
 
 ```text
-dag_size(epoch) = 80 GB + (epoch × 256 MB)
+dag_size(epoch) = 32 GB + (epoch × 256 MB)
 
-// Epoch 0:    80.0 GB
-// Epoch 30:   87.5 GB   (~1 month)
-// Epoch 365:  173.5 GB  (~1 year)
-// Epoch 730:  267.0 GB  (~2 years)
-```
 
 Governance lever: The growth rate (256 MB/epoch) is a consensus parameter. It can be adjusted via hard fork if hardware capacities plateau. The growth ensures that today's "fits comfortably" hardware becomes tomorrow's "barely fits" — maintaining the intended exclusivity window for large-VRAM GPUs.
 
@@ -427,17 +421,17 @@ The Merkle tree has ~335 M leaves and depth 29. Bottom-up construction on GPU is
 // Time: ~2-4 seconds on target hardware
 ```
 
-Memory budget: DAG (80 GB) + Merkle tree (~20 GB) + kernel overhead (~2 GB) ≈ 102 GB. This fits within 128 GB unified memory with headroom for the OS and background tasks.
+Memory budget: DAG (32 GB) + Merkle tree (~20 GB) + kernel overhead (~2 GB) ≈ 102 GB. This fits within 128 GB unified memory with headroom for the OS and background tasks.
 
 ## 🧪 Reference Parameters Summary
 
 | PARAMETER | SYMBOL | VALUE |
 |---|---|---|
-| DAG size (epoch 0) | D₀ | 80 GB (85,899,345,920 bytes) |
+| DAG size (epoch 0) | D₀ | 32 GB  |
 | DAG cell size | C | 256 bytes |
 | Seed cache size | S | 512 MB |
 | Cache entry size | — | 64 bytes (SHA3-512 output) |
-| Cache lookups per cell | — | 256 |
+| Cache lookups per cell | — | 128 |
 | DAG reads per nonce | R | 128 |
 | Audit cells per solution | K | 32 |
 | Epoch length | E | 7,200 blocks |
