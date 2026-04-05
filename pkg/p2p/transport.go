@@ -64,6 +64,7 @@ func (s *Server) Start(ctx context.Context) error {
 			s.acceptLoop(ctx)
 		}()
 	}
+
 	for _, bootnode := range s.cfg.Bootnodes {
 		bootnode = strings.TrimSpace(bootnode)
 		if bootnode == "" {
@@ -75,6 +76,7 @@ func (s *Server) Start(ctx context.Context) error {
 			s.dialLoop(ctx, addr)
 		}(bootnode)
 	}
+
 	go func() {
 		<-ctx.Done()
 		if s.listener != nil {
@@ -84,6 +86,7 @@ func (s *Server) Start(ctx context.Context) error {
 			_ = peer.Conn.Close()
 		}
 	}()
+
 	return nil
 }
 
@@ -96,6 +99,7 @@ func (s *Server) acceptLoop(ctx context.Context) {
 			}
 			continue
 		}
+
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
@@ -107,14 +111,17 @@ func (s *Server) acceptLoop(ctx context.Context) {
 func (s *Server) dialLoop(ctx context.Context, addr string) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+
 	for {
 		if ctx.Err() != nil {
 			return
 		}
+
 		conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
 		if err == nil {
 			s.handleConn(ctx, conn, false)
 		}
+
 		select {
 		case <-ctx.Done():
 			return
@@ -124,8 +131,14 @@ func (s *Server) dialLoop(ctx context.Context, addr string) {
 }
 
 func (s *Server) handleConn(ctx context.Context, conn net.Conn, inbound bool) {
-	peer := &Peer{Addr: conn.RemoteAddr().String(), Conn: conn, Inbound: inbound, ConnectedAt: time.Now(), LastSeen: time.Now()}
-	s.peers.Add(peer)
+	peer := &Peer{
+		Addr:        conn.RemoteAddr().String(),
+		Conn:        conn,
+		Inbound:     inbound,
+		ConnectedAt: time.Now(),
+		LastSeen:    time.Now(),
+	}
+
 	defer func() {
 		s.peers.Remove(peer)
 		_ = conn.Close()
@@ -133,20 +146,36 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn, inbound bool) {
 			s.cfg.Handlers.OnPeerDisconnected(peer)
 		}
 	}()
-	if s.cfg.Handlers.OnPeerConnected != nil {
-		s.cfg.Handlers.OnPeerConnected(peer)
+
+	if err := peer.Send(Message{
+		Type: MessageHello,
+		Body: HelloMessage{
+			NodeID:  s.cfg.NodeID,
+			Network: s.cfg.Network,
+			Version: s.cfg.Version,
+			Listen:  s.cfg.AdvertiseAddr,
+		},
+	}); err != nil {
+		return
 	}
-	_ = peer.Send(Message{Type: MessageHello, Body: HelloMessage{NodeID: s.cfg.NodeID, Network: s.cfg.Network, Version: s.cfg.Version, Listen: s.cfg.AdvertiseAddr}})
+
 	for {
 		_ = conn.SetReadDeadline(time.Now().Add(defaultReadTimeout))
+
 		msg, err := readMessage(conn)
 		if err != nil {
 			return
 		}
 		peer.LastSeen = time.Now()
+
+		if peer.ID == "" && msg.Type != MessageHello {
+			return
+		}
+
 		if err := s.dispatch(peer, msg); err != nil {
 			return
 		}
+
 		select {
 		case <-ctx.Done():
 			return
@@ -160,27 +189,48 @@ func (s *Server) dispatch(peer *Peer, msg Message) error {
 	if err != nil {
 		return err
 	}
+
 	switch msg.Type {
 	case MessageHello:
+		if peer.ID != "" {
+			return fmt.Errorf("duplicate hello from %q", peer.ID)
+		}
+
 		var body HelloMessage
 		if err := json.Unmarshal(payload, &body); err != nil {
 			return err
 		}
+
 		if strings.TrimSpace(body.NodeID) == "" {
 			return fmt.Errorf("peer hello missing node id")
+		}
+		if strings.TrimSpace(body.Network) == "" {
+			return fmt.Errorf("peer hello missing network")
+		}
+		if body.Network != s.cfg.Network {
+			return fmt.Errorf("peer network mismatch peer=%s local=%s", body.Network, s.cfg.Network)
 		}
 		if body.NodeID == s.cfg.NodeID {
 			return fmt.Errorf("self connection rejected")
 		}
-		if s.peers.HasPeerID(body.NodeID, peer) {
-			return fmt.Errorf("duplicate peer id %q", body.NodeID)
-		}
+
 		peer.ID = body.NodeID
 		peer.Hello = body
+
+		if err := s.peers.AddIfNoPeerID(peer); err != nil {
+			peer.ID = ""
+			peer.Hello = HelloMessage{}
+			return err
+		}
+
+		if s.cfg.Handlers.OnPeerConnected != nil {
+			s.cfg.Handlers.OnPeerConnected(peer)
+		}
 		if s.cfg.Handlers.OnHello != nil {
 			s.cfg.Handlers.OnHello(peer, body)
 		}
 		return nil
+
 	case MessageStatus:
 		var body StatusMessage
 		if err := json.Unmarshal(payload, &body); err != nil {
@@ -191,6 +241,7 @@ func (s *Server) dispatch(peer *Peer, msg Message) error {
 			s.cfg.Handlers.OnStatus(peer, body)
 		}
 		return nil
+
 	case MessagePing:
 		var body PingMessage
 		if err := json.Unmarshal(payload, &body); err != nil {
@@ -199,7 +250,11 @@ func (s *Server) dispatch(peer *Peer, msg Message) error {
 		if s.cfg.Handlers.OnPing != nil {
 			s.cfg.Handlers.OnPing(peer, body)
 		}
-		return peer.Send(Message{Type: MessagePong, Body: PongMessage{Timestamp: time.Now().Unix()}})
+		return peer.Send(Message{
+			Type: MessagePong,
+			Body: PongMessage{Timestamp: time.Now().Unix()},
+		})
+
 	case MessagePong:
 		var body PongMessage
 		if err := json.Unmarshal(payload, &body); err != nil {
@@ -209,6 +264,7 @@ func (s *Server) dispatch(peer *Peer, msg Message) error {
 			s.cfg.Handlers.OnPong(peer, body)
 		}
 		return nil
+
 	case MessageNewBlk:
 		var body NewBlockMessage
 		if err := json.Unmarshal(payload, &body); err != nil {
@@ -218,6 +274,7 @@ func (s *Server) dispatch(peer *Peer, msg Message) error {
 			s.cfg.Handlers.OnNewBlock(peer, body)
 		}
 		return nil
+
 	case MessageSyncRq:
 		var body SyncRequestMessage
 		if err := json.Unmarshal(payload, &body); err != nil {
@@ -227,6 +284,7 @@ func (s *Server) dispatch(peer *Peer, msg Message) error {
 			s.cfg.Handlers.OnSyncRequest(peer, body)
 		}
 		return nil
+
 	case MessageSyncRs:
 		var body SyncResponseMessage
 		if err := json.Unmarshal(payload, &body); err != nil {
@@ -236,6 +294,7 @@ func (s *Server) dispatch(peer *Peer, msg Message) error {
 			s.cfg.Handlers.OnSyncResponse(peer, body)
 		}
 		return nil
+
 	default:
 		return fmt.Errorf("unknown message type %q", msg.Type)
 	}
