@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	"github.com/zeebo/blake3"
-	"golang.org/x/crypto/sha3"
 )
 
 type SolutionCell struct {
@@ -150,7 +149,7 @@ func VerifyColossusXSolution(spec Spec, header []byte, target Target, merkleRoot
 	var nonceLE [8]byte
 	binary.LittleEndian.PutUint64(nonceLE[:], solution.Nonce)
 	initialInput = append(initialInput, nonceLE[:]...)
-	initial := sha3.Sum512(initialInput)
+	initial := blake3Expand64(initialInput)
 	mix := initial
 	if len(solution.MiningCells) != int(spec.ReadsPerHash) {
 		return errors.New("invalid mining cell count")
@@ -169,7 +168,7 @@ func VerifyColossusXSolution(spec Spec, header []byte, target Target, merkleRoot
 		}
 		mix = colossusXRoundFold(mix, c.Data)
 	}
-	mix = sha3.Sum512(mix[:])
+	mix = blake3Expand64(mix[:])
 	if mix != solution.MixDigest {
 		return errors.New("mix digest mismatch")
 	}
