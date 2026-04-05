@@ -1,117 +1,113 @@
 # Colossus-X
 
-Colossus-X is a PoW miner/node implementation written in Go. The CLI currently provides three main subcommands:
-- `mine` (default): run mining
-- `daemon` (`node` alias): start the full node runtime
-- `verify`: validate PoW from header/block JSON input
+This README is intentionally **daemon-focused** for the `testnet20260405` branch.
+
+The codebase still contains `mine` and `verify`, but this document is written for operators who only run:
+
+```bash
+./bin/colossusx daemon ...
+```
 
 ---
 
-## 1. Setup (from `git clone` to run)
-
-### 1-1. Clone
+## 1. Checkout and build
 
 ```bash
 git clone https://github.com/CypherTroopers/colossus-x.git
 cd colossus-x
 git fetch --all
-git checkout Miner-Validator-Hybrid-testnet
-```
+git checkout testnet20260405
 
-### 1-2. Required tools
-
-- Go **1.23.x** (matches `go 1.23.0` in `go.mod`)
-- `make` (optional, for convenience targets)
-
-Example checks:
-
-```bash
-go version
-make --version
-```
-
-### 1-3. Resolve dependencies and build
-
-```bash
-# Download dependencies
 go mod download
-
-# Build subcommand CLI binary (mine/daemon/verify)
 mkdir -p bin
 go build -o bin/colossusx ./cmd/colossusx
 ```
 
-Using `make`:
+Requirements:
+
+- Go `1.23.x`
+- optional: `make`
+
+Quick checks:
 
 ```bash
-make SKY
-make colossusx
+go version
+./bin/colossusx -h
 ```
-
-### 1-4. Executables and entry points
-
-- Root `main.go`: miner-focused CLI (`colossusx [mine flags]`)
-- `cmd/colossusx/main.go`: subcommand CLI (`mine/daemon/verify`)
-
-For real node operation, use the executable form that supports the **`daemon`** subcommand.
 
 ---
 
-## 2. Production node startup command (`daemon`)
+## 2. What `daemon` does on this branch
 
-Using a built binary (`daemon` subcommand):
+`daemon` starts the node runtime implemented in `cmd/colossusx/main.go` and `pkg/node/node.go`.
+
+Main behaviors on this branch:
+
+- loads or creates deterministic genesis in `datadir`
+- keeps canonical chain data on disk
+- preserves competing side branches in store
+- syncs blocks over the built-in P2P layer
+- can run as `miner`, `full`, or `light`
+- exposes optional HTTP endpoints when `-http` is set
+- supports mempool submission with `POST /tx`
+- uses `coinbase` for block rewards on mining nodes
+
+---
+
+## 3. Recommended genesis file
+
+For multi-node testnet operation, use the same `-genesis-file` on every node.
+
+Example `configs/devnet/genesis.json`:
+
+```json
+{
+  "chain_id": "devnet",
+  "message": "colossusx devnet genesis",
+  "timestamp": 1710000000,
+  "target": "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "mode": "colossusx",
+  "initial_dag_mib": 32768,
+  "dag_growth_mib_per_epoch": 256,
+  "alloc": {
+    "alice": 1000000,
+    "bob": 1000000
+  },
+  "block_reward": 50,
+  "target_block_time_millis": 18000,
+  "retarget_interval": 4
+}
+```
+
+Supported JSON fields on this branch:
+
+- `chain_id`
+- `message`
+- `timestamp`
+- `target`
+- `mode`
+- `initial_dag_mib`
+- `dag_growth_mib_per_epoch`
+- `extra_data`
+- `alloc`
+- `block_reward`
+- `target_block_time_millis`
+- `retarget_interval`
+
+Important:
+
+- if `datadir` already contains a different genesis, daemon exits with a genesis mismatch error
+- `alloc` becomes the initial on-chain account state
+- `block_reward`, `target_block_time_millis`, and `retarget_interval` are loaded into chain economics
+
+---
+
+## 4. Daemon startup commands
+
+### 4-1. Miner node
 
 ```bash
 ./bin/colossusx daemon \
-  -mode colossusx \
-  -network mainnet \
-  -genesis-file ./configs/mainnet/genesis.json \
-  -node-role miner \
-  -datadir ./data \
-  -listen :30333 \
-  -node-id node-01 \
-  -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
-  -workers 16 \
-  -miner-backend auto \
-  -miner-dag-alloc auto
-```
-
-> Note: currently, only `colossusx` mode is supported.
-
----
-
-## 2.5 CLI entry points (`mine` / `daemon` / `verify`)
-
-Colossus-X follows a single-binary, multi-entry-point CLI design. Use `mine`, `daemon`, and `verify` depending on your workload.
-
-### 2.5-1. `mine` (run mining)
-
-Full example with major flags:
-
-```bash
-go run ./cmd/colossusx mine \
-  -mode colossusx \
-  -backend unified \
-  -dag-alloc auto \
-  -initial-dag-mib 32768 \
-  -dag-growth-mib-per-epoch 256 \
-  -workers 16 \
-  -header 0000000000000000000000000000000000000000000000000000000000000000 \
-  -epoch-seed 0000000000000000000000000000000000000000000000000000000000000000 \
-  -target 00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
-  -start-nonce 0 \
-  -max-nonces 200000 \
-  -bench=false
-```
-
-### 2.5-2. `daemon` (start node)
-
-For `daemon`, role-based operation with `-node-role` is recommended. If all nodes share `-genesis-file ./configs/devnet/genesis.json`, nodes running on different servers can synchronize on the same chain (`-node-role` cannot be combined with `-mine/-no-mine`).
-
-`-node-role=miner` (mining node):
-
-```bash
-go run ./cmd/colossusx daemon \
   -mode colossusx \
   -network devnet \
   -genesis-file ./configs/devnet/genesis.json \
@@ -119,18 +115,21 @@ go run ./cmd/colossusx daemon \
   -workers 16 \
   -max-nonces 500000 \
   -block-time 18000ms \
-  -datadir ./data \
+  -datadir ./data/miner-01 \
   -listen :30333 \
   -bootnodes 161.97.184.220:30333 \
-  -node-id node-01 \
+  -node-id miner-01 \
+  -coinbase miner-01 \
   -miner-backend auto \
-  -miner-dag-alloc auto
+  -miner-dag-alloc auto \
+  -http :8080 \
+  -max-txs-per-block 256
 ```
 
-`-node-role=full` (verification / relay node):
+### 4-2. Full node
 
 ```bash
-go run ./cmd/colossusx daemon \
+./bin/colossusx daemon \
   -mode colossusx \
   -network devnet \
   -genesis-file ./configs/devnet/genesis.json \
@@ -138,239 +137,192 @@ go run ./cmd/colossusx daemon \
   -workers 16 \
   -max-nonces 500000 \
   -block-time 18000ms \
-  -datadir ./data \
-  -listen :30333 \
-  -bootnodes 203.0.113.10:30333,203.0.113.11:30333 \
-  -node-id node-01 \
+  -datadir ./data/full-01 \
+  -listen :30334 \
+  -bootnodes 161.97.184.220:30333 \
+  -node-id full-01 \
   -miner-backend auto \
-  -miner-dag-alloc auto
+  -miner-dag-alloc auto \
+  -http :8081
 ```
 
-`-node-role=light` (light verification node):
+### 4-3. Light node
 
 ```bash
-go run ./cmd/colossusx daemon \
+./bin/colossusx daemon \
   -mode colossusx \
   -network devnet \
   -genesis-file ./configs/devnet/genesis.json \
   -node-role light \
-  -workers 16 \
-  -max-nonces 500000 \
-  -block-time 18000ms \
-  -datadir ./data \
-  -listen :30333 \
+  -datadir ./data/light-01 \
+  -listen :30335 \
   -bootnodes 161.97.184.220:30333 \
-  -node-id node-01 \
-  -miner-backend auto \
-  -miner-dag-alloc auto
+  -node-id light-01 \
+  -http :8082
 ```
 
-### 2.5-3. `verify` (PoW validation)
+Notes:
 
-Block validation (ColossusX v2):
+- `-node-role miner` enables mining
+- `-node-role full` does not mine, but still runs the full node runtime
+- `-node-role light` skips mining runtime initialization and enables light validation mode
+- do **not** combine `-node-role` with legacy `-mine` or `-no-mine`
+
+---
+
+## 5. Daemon flags actually used on this branch
+
+| Flag | Default | Meaning |
+|---|---:|---|
+| `-mode` | `colossusx` | Only `colossusx` is supported here. |
+| `-network` | `devnet` | Network / chain identifier. |
+| `-initial-dag-mib` | `32768` | Initial DAG size in MiB. |
+| `-dag-mib` | `0` | Deprecated alias for `-initial-dag-mib`. |
+| `-dag-growth-mib-per-epoch` | `256` | DAG growth in MiB per epoch. |
+| `-node-role` | `full` | `full`, `miner`, or `light`. |
+| `-mine` | `true` | Legacy behavior. Prefer `-node-role`. |
+| `-no-mine` | `false` | Legacy behavior. Prefer `-node-role`. |
+| `-workers` | `runtime.NumCPU()` | Worker count used by validator/miner runtime. |
+| `-max-nonces` | `500000` | Nonce search limit per block template. |
+| `-block-time` | `500ms` | Delay between locally mined blocks. |
+| `-genesis-message` | `colossusx devnet genesis` | Used only when `-genesis-file` is not provided. |
+| `-genesis-file` | `""` | Shared genesis JSON. Recommended. |
+| `-datadir` | `./data` | Persistent chain data directory. |
+| `-listen` | `:30333` | P2P TCP listen address. |
+| `-bootnodes` | `""` | Comma-separated peers. |
+| `-node-id` | `""` | Stable node identifier. |
+| `-target` | `0fffffffff...` | Genesis / initial target when not using `-genesis-file`. |
+| `-miner-backend` | `opencl` | `auto`, `cuda`, `opencl`, `metal`, `cpu`, `unified`, `gpu`. |
+| `-miner-dag-alloc` | `auto` | `auto`, `go-heap`, `pinned-host`, `cuda-managed`, `opencl-svm`, `metal-shared`. |
+| `-http` | `""` | Optional HTTP API listen address. |
+| `-coinbase` | `""` | Reward address label. Defaults to `node-id` when empty. |
+| `-max-txs-per-block` | `256` | Maximum number of accepted mempool txs per mined block. |
+
+---
+
+## 6. HTTP API
+
+HTTP server starts only when `-http` is set.
+
+### 6-1. Health
 
 ```bash
-go run ./cmd/colossusx verify \
-  -mode colossusx \
-  -block ./path/to/block.json \
-  -initial-dag-mib 32768 \
-  -dag-growth-mib-per-epoch 256
+curl http://127.0.0.1:8080/health
 ```
 
-> `verify` does not allow using `-header` and `-block` together.  
-> In `colossusx` mode (algorithm v2), verification requires `-block` because solution fields are block-level.
+### 6-2. Node status
+
+```bash
+curl http://127.0.0.1:8080/status
+```
+
+### 6-3. Current mempool
+
+```bash
+curl http://127.0.0.1:8080/mempool
+```
+
+### 6-4. Submit transaction
+
+```bash
+curl -X POST http://127.0.0.1:8080/tx \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "from": "alice",
+    "to": "bob",
+    "value": 10,
+    "nonce": 0,
+    "data": "hello"
+  }'
+```
+
+### 6-5. Query block by height
+
+```bash
+curl "http://127.0.0.1:8080/block?height=1"
+```
+
+HTTP endpoints on this branch:
+
+- `GET /health`
+- `GET /status`
+- `GET /mempool`
+- `POST /tx`
+- `GET /block?height=<n>`
 
 ---
 
-## 3. CLI flag reference
+## 7. P2P and sync behavior
 
-## 3-1. `daemon` flags
+The built-in P2P runtime does the following:
 
-| Flag | Default | Description |
-|---|---:|---|
-| `-mode` | `colossusx` | Chain mode. Currently only `colossusx`. |
-| `-network` | `devnet` | Network identifier (similar to chain ID). |
-| `-initial-dag-mib` | `32768` | Initial DAG size (MiB). |
-| `-dag-mib` | `0` | Deprecated alias for `-initial-dag-mib`; overrides when non-zero. |
-| `-dag-growth-mib-per-epoch` | `256` | DAG growth per epoch (MiB). |
-| `-node-role` | `full` | Node role: `full` (no mining, full DAG verification), `miner` (enable mining), `light` (skip mining runtime init + verify via Merkle-proof path without local full DAG reconstruction). |
-| `-mine` | `true` | Legacy flag. Prefer `-node-role=miner`. |
-| `-no-mine` | `false` | Legacy flag. Prefer `-node-role=full` (or `light`). |
-| `-workers` | `runtime.NumCPU()` | Number of mining workers. |
-| `-max-nonces` | `500000` | Nonce search cap per block template. |
-| `-block-time` | `500ms` | Block production interval. |
-| `-genesis-message` | `colossusx devnet genesis` | Genesis message string. |
-| `-genesis-file` | `""` | Path to shared genesis JSON (recommended for multi-node sync). When provided, chain/spec/target/message are loaded from file and must match explicitly provided overlapping flags. |
-| `-datadir` | `./data` | Node persistent data directory. |
-| `-listen` | `:30333` | TCP listen address. |
-| `-bootnodes` | `""` | Comma-separated bootnodes. |
-| `-node-id` | `""` | Stable node identifier. |
-| `-target` | `0fffffffff...ffff` | Mining target (hex). |
-| `-miner-backend` | `opencl` | `auto/cuda/opencl/metal/cpu/unified/gpu` (`auto` chooses `cuda`→`metal`→`opencl`→`unified`). |
-| `-miner-dag-alloc` | `auto` | `auto/go-heap/pinned-host/cuda-managed/opencl-svm/metal-shared`. |
+- exchanges `hello`, `status`, `ping`, `pong`
+- requests missing blocks with `sync request`
+- responds with canonical blocks from local store
+- broadcasts accepted new tip blocks
+- compares peer `total_work` during initial sync readiness
 
-In `colossusx` production-like mode, `backend` and `dag-alloc` combinations are constrained; invalid combinations are rejected.
+Operational notes:
 
-The `-genesis-file` JSON can be used with a minimal set of fields (`chain_id`, `timestamp`, `target`). Specify `mode`, `initial_dag_mib`, and `dag_growth_mib_per_epoch` only when needed (ColossusX defaults are used when omitted).
-
-## 3-2. `mine` flags (default command)
-
-| Flag | Default | Description |
-|---|---:|---|
-| `-mode` | `colossusx` | Runtime mode (only `colossusx`). |
-| `-backend` | `opencl` | `auto/cuda/opencl/metal/cpu/unified/gpu` (`auto` chooses `cuda`→`metal`→`opencl`→`unified`). |
-| `-dag-alloc` | `auto` | DAG allocation strategy. |
-| `-initial-dag-mib` | `32768` | Initial DAG size (MiB). |
-| `-dag-mib` | `0` | Deprecated alias of `-initial-dag-mib`. |
-| `-dag-growth-mib-per-epoch` | `256` | DAG growth (MiB/epoch). |
-| `-workers` | `runtime.NumCPU()` | Worker count. |
-| `-header` | fixed test value | Mining input header (hex). |
-| `-epoch-seed` | fixed test value | Epoch seed (hex). |
-| `-target` | `00ffff...ffff` | 32-byte big-endian target. |
-| `-start-nonce` | `0` | Starting nonce. |
-| `-max-nonces` | `200000` | Unlimited when set to `0`. |
-| `-bench` | `false` | Benchmark mode when `true` (no found-solution decision). |
-
-## 3-3. `verify` flags
-
-| Flag | Default | Description |
-|---|---:|---|
-| `-mode` | `colossusx` | Validation mode (only `colossusx`). |
-| `-header` | `""` | `types.BlockHeader` JSON path. |
-| `-block` | `""` | `types.Block` JSON path. |
-| `-initial-dag-mib` | `32768` | Initial DAG size. |
-| `-dag-mib` | `0` | Deprecated alias for `-initial-dag-mib`. |
-| `-dag-growth-mib-per-epoch` | `256` | DAG growth value. |
-
-`verify` requires exactly one of `--header` or `--block`; using both is invalid.  
-In `colossusx` mode, `--header` only is rejected and `--block` is required.
+- bootnodes are plain `host:port` entries separated by commas
+- if no peers are connected, a miner node starts immediately
+- if peers are connected but have no status yet, miner waits for sync metadata
+- frame size checks and duplicate/self-peer rejection are enabled in P2P code on this branch
 
 ---
 
-## 4. GPU/accelerator notes
+## 8. Test and validation commands
 
-Backend-specific runtime requirements (high level):
+Run the packages most relevant to daemon operation:
 
-- `opencl` / `gpu`
-  - Uses OpenCL runtime.
-  - In `cgo && opencl` builds, links with `-lOpenCL`.
-- `cuda`
-  - Uses CUDA implementation when `cuda` build tag is enabled.
-  - In `cgo && cuda` paths, links with `-lcudart`.
-- `metal`
-  - Metal backend; in colossusx mode, requires `metal-shared` DAG strategy.
-- `unified`, `cpu`
-  - CPU/shared-memory oriented paths.
+```bash
+go test ./pkg/node -v
+go test ./pkg/consensus -v
+go test ./pkg/chain -v
+go test ./pkg/types -v
+go test ./pkg/p2p -v
+```
 
-Because accelerator environments vary, start with `-backend cpu` or `-backend unified` for baseline validation before moving to GPU backends.
-
----
-
-## 5. Test command list
-
-### 5-1. Full test suite
+Full suite:
 
 ```bash
 go test ./...
 ```
 
-### 5-2. Key packages
+CLI smoke checks:
 
 ```bash
-go test ./colossusx -v
-go test ./pkg/node -v
-go test ./pkg/consensus -v
-go test ./pkg/chain -v
-go test ./pkg/types -v
-```
-
-### 5-3. Lightweight CLI checks
-
-```bash
-# Help
 ./bin/colossusx -h
-
-# Small benchmark (unified)
-go run . -bench -backend unified -dag-mib 1 -max-nonces 1000 -workers 2
-
-# Small benchmark (cpu)
-go run . -bench -backend cpu -dag-mib 1 -max-nonces 1000 -workers 2
-
-# Low-difficulty mining behavior check
-go run . -backend unified -dag-mib 1 -workers 2 -max-nonces 10 -target ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+./bin/colossusx daemon -h
 ```
 
-### 5-4. Via Makefile targets
+---
+
+## 9. Practical notes for this branch
+
+- Use `./cmd/colossusx` / `./bin/colossusx`, not the repository root `main.go`, for daemon operation.
+- For multi-node testnet, keep `-genesis-file` identical on every node.
+- `coinbase` controls where block reward is credited in block state.
+- Transactions are accepted into mempool through `/tx` and packed up to `-max-txs-per-block`.
+- `full` nodes do not mine, but they still participate in validation, sync, and HTTP serving.
+- `light` nodes are the lightest daemon path on this branch.
+
+---
+
+## 10. Minimal one-node devnet command
 
 ```bash
-make run-help
-make bench-small
-make bench-cpu
-make mine-easy
+./bin/colossusx daemon \
+  -mode colossusx \
+  -network devnet \
+  -node-role miner \
+  -datadir ./data/devnet-01 \
+  -listen :30333 \
+  -node-id devnet-01 \
+  -coinbase devnet-01 \
+  -miner-backend cpu \
+  -miner-dag-alloc go-heap \
+  -http :8080
 ```
 
----
-
-## 6. Operational notes
-
-- Before production use, start `daemon` and confirm `runtime_init` / `execution` logs report the backend you intend to use.
-- In colossusx mode, invalid DAG strategy combinations are rejected, so keep `-miner-backend` and `-miner-dag-alloc` consistent.
-
----
-
-## 7. Algorithm overview
-
-Colossus-X uses a DAG-based proof-of-work workflow designed for heterogeneous backends (CPU/OpenCL/CUDA/Metal/unified memory).
-
-1. **Input preparation**
-   - Miner receives (or builds) a block template including header, target, and epoch-related context.
-   - Epoch seed and DAG size are derived from epoch parameters (`initial-dag-mib`, `dag-growth-mib-per-epoch`).
-2. **DAG preparation**
-   - Runtime allocates DAG memory according to backend strategy (`auto`, `go-heap`, `pinned-host`, etc.).
-   - DAG is built/expanded for the current epoch and mapped to the selected execution backend.
-3. **Nonce search**
-   - Workers iterate nonce ranges in parallel (`workers`, `start-nonce`, `max-nonces`).
-   - Each candidate nonce is combined with the header and processed through the PoW function using DAG lookups.
-4. **Target comparison**
-   - The produced digest is interpreted as a big-endian value and compared against `target`.
-   - A digest `<= target` is accepted as a valid PoW solution.
-5. **Merkle proof verification (block integrity step)**
-   - After a candidate block is assembled, transaction inclusion should be checked against the block header Merkle root.
-   - For each proof path, hash concatenation order (left/right sibling position) must match the proof metadata at every tree level.
-   - The reconstructed root must exactly match the Merkle root committed in the header; otherwise, the block must be rejected even if PoW passes.
-6. **Result handling**
-   - In `mine`, the command reports a found solution or exhaustion of the configured nonce range.
-   - In `daemon`, solved templates proceed through block production/network propagation flow.
-
-This structure allows consistent PoW semantics while switching computation and memory behavior per backend, while also requiring transaction inclusion integrity checks via Merkle proofs.
-
----
-
-## 8. Verification flow
-
-`verify` is intended for offline or pipeline-integrated PoW validation from JSON artifacts.
-
-> **Current ColossusX behavior (important):**
-> - In `colossusx` mode (algorithm v2), `cmd/colossusx verify` requires `--block` and validates `colossusx_solution` (or `colossusx_solution_compact`) plus `dag_merkle_root`.
-> - `--header`-only validation is available only for non-v2/legacy paths.
-> - Full block validation in `pkg/consensus/validator.go` reconstructs and caches the epoch DAG locally before verifying the ColossusX solution and DAG Merkle root.
-
-- **Block mode** (`-block path/to/block.json`) for ColossusX v2
-  - Loads a full `types.Block` JSON object.
-  - Extracts header and validates the ColossusX solution against target and DAG Merkle root.
-
-- **Header mode** (`-header path/to/header.json`) for legacy/non-v2 flows
-  - Loads a `types.BlockHeader` JSON object.
-  - Performs stateless header PoW verification.
-
-- **Validation rules**
-  - Exactly one of `-header` or `-block` must be specified.
-  - In `colossusx` mode, `-block` is mandatory.
-  - DAG sizing flags (`-initial-dag-mib`, `-dag-growth-mib-per-epoch`) must match the chain configuration used to produce the data.
-  - When transaction proofs are provided by tooling or APIs, Merkle proof paths should reconstruct the header Merkle root exactly.
-
-- **Typical verification outcomes**
-  - Success: PoW digest satisfies the target.
-  - Failure: digest does not satisfy target, input data is inconsistent, or runtime/backend parameters are incompatible.
-
-For reproducible operations, keep miner and verifier configuration aligned (network, mode, DAG growth policy, and target interpretation).
+This is the shortest daemon-only startup path on this branch.
