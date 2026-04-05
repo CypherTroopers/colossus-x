@@ -33,6 +33,7 @@ type Peer struct {
 func (p *Peer) Send(msg Message) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	body, err := json.Marshal(msg)
 	if err != nil {
 		return err
@@ -40,9 +41,11 @@ func (p *Peer) Send(msg Message) error {
 	if len(body) > defaultMaxMessageSize {
 		return fmt.Errorf("message too large: %d", len(body))
 	}
+
 	frame := make([]byte, 4+len(body))
 	binary.BigEndian.PutUint32(frame[:4], uint32(len(body)))
 	copy(frame[4:], body)
+
 	_ = p.Conn.SetWriteDeadline(time.Now().Add(defaultWriteTimeout))
 	_, err = p.Conn.Write(frame)
 	return err
@@ -63,6 +66,29 @@ func (ps *PeerSet) Add(peer *Peer) {
 	ps.peers[peer] = struct{}{}
 }
 
+func (ps *PeerSet) AddIfNoPeerID(peer *Peer) error {
+	if peer == nil {
+		return fmt.Errorf("nil peer")
+	}
+	if peer.ID == "" {
+		return fmt.Errorf("peer id is required")
+	}
+
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	for existing := range ps.peers {
+		if existing == peer {
+			continue
+		}
+		if existing.ID == peer.ID {
+			return fmt.Errorf("duplicate peer id %q", peer.ID)
+		}
+	}
+	ps.peers[peer] = struct{}{}
+	return nil
+}
+
 func (ps *PeerSet) Remove(peer *Peer) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
@@ -72,6 +98,7 @@ func (ps *PeerSet) Remove(peer *Peer) {
 func (ps *PeerSet) List() []*Peer {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
+
 	out := make([]*Peer, 0, len(ps.peers))
 	for peer := range ps.peers {
 		out = append(out, peer)
@@ -89,8 +116,10 @@ func (ps *PeerSet) HasPeerID(id string, exclude *Peer) bool {
 	if id == "" {
 		return false
 	}
+
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
+
 	for peer := range ps.peers {
 		if peer == exclude {
 			continue
@@ -107,14 +136,17 @@ func readMessage(r io.Reader) (Message, error) {
 	if _, err := io.ReadFull(r, sizeBuf[:]); err != nil {
 		return Message{}, err
 	}
+
 	size := binary.BigEndian.Uint32(sizeBuf[:])
 	if size == 0 || size > defaultMaxMessageSize {
 		return Message{}, fmt.Errorf("invalid message size %d", size)
 	}
+
 	payload := make([]byte, size)
 	if _, err := io.ReadFull(r, payload); err != nil {
 		return Message{}, err
 	}
+
 	var msg Message
 	if err := json.Unmarshal(payload, &msg); err != nil {
 		return Message{}, err
