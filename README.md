@@ -153,7 +153,7 @@ go run ./cmd/colossusx daemon \
   -node-role light \
   -datadir ./data/light-01 \
   -listen :30335 \
-  -bootnodes 161.97.184.220:30333 \
+  -bootnodes 161.97.184.220:30333,62.169.24.158:30333 \
   -node-id light-01 \
   -http :8082
 ```
