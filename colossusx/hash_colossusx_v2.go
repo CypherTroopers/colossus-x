@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 
 	"github.com/zeebo/blake3"
-	"golang.org/x/crypto/sha3"
 )
 
 const ColossusXAuditCellCount = 16
@@ -34,7 +33,7 @@ func ColossusXTraceHash(spec Spec, header []byte, nonce Nonce, dag DAGAccessor) 
 	if nonce != nil {
 		seedInput = nonce.AppendTo(seedInput)
 	}
-	initial := sha3.Sum512(seedInput)
+	initial := blake3Expand64(seedInput)
 	mix := initial
 	cell := make([]byte, spec.NodeSize)
 	accessed := make([]uint32, 0, spec.ReadsPerHash)
@@ -45,7 +44,7 @@ func ColossusXTraceHash(spec Spec, header []byte, nonce Nonce, dag DAGAccessor) 
 		dag.ReadNode(index, cell)
 		mix = colossusXRoundFold(mix, cell)
 	}
-	mix = sha3.Sum512(mix[:])
+	mix = blake3Expand64(mix[:])
 
 	finalInput := make([]byte, 0, len(initial)+len(mix))
 	finalInput = append(finalInput, initial[:]...)
@@ -72,7 +71,7 @@ func ColossusXAuditIndices(pow [32]byte, dagCellCount uint64, count uint32) []ui
 	var ctr [4]byte
 	for i := uint32(0); i < count; i++ {
 		binary.LittleEndian.PutUint32(ctr[:], i)
-		sum := sha3.Sum256(append(pow[:], ctr[:]...))
+		sum := blake3.Sum256(append(pow[:], ctr[:]...))
 		idx := binary.LittleEndian.Uint32(sum[:4])
 		out = append(out, uint64(idx)%dagCellCount)
 	}
