@@ -50,28 +50,30 @@ func (p *Peer) Send(msg Message) error {
 
 type PeerSet struct {
 	mu    sync.RWMutex
-	peers map[string]*Peer
+	peers map[*Peer]struct{}
 }
 
-func NewPeerSet() *PeerSet { return &PeerSet{peers: make(map[string]*Peer)} }
+func NewPeerSet() *PeerSet {
+	return &PeerSet{peers: make(map[*Peer]struct{})}
+}
 
 func (ps *PeerSet) Add(peer *Peer) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	ps.peers[peerKey(peer)] = peer
+	ps.peers[peer] = struct{}{}
 }
 
 func (ps *PeerSet) Remove(peer *Peer) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	delete(ps.peers, peerKey(peer))
+	delete(ps.peers, peer)
 }
 
 func (ps *PeerSet) List() []*Peer {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 	out := make([]*Peer, 0, len(ps.peers))
-	for _, peer := range ps.peers {
+	for peer := range ps.peers {
 		out = append(out, peer)
 	}
 	return out
@@ -89,7 +91,7 @@ func (ps *PeerSet) HasPeerID(id string, exclude *Peer) bool {
 	}
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
-	for _, peer := range ps.peers {
+	for peer := range ps.peers {
 		if peer == exclude {
 			continue
 		}
@@ -98,13 +100,6 @@ func (ps *PeerSet) HasPeerID(id string, exclude *Peer) bool {
 		}
 	}
 	return false
-}
-
-func peerKey(peer *Peer) string {
-	if peer.ID != "" {
-		return peer.ID
-	}
-	return fmt.Sprintf("%s/%t", peer.Addr, peer.Inbound)
 }
 
 func readMessage(r io.Reader) (Message, error) {
