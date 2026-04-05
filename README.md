@@ -5,12 +5,12 @@ This README is intentionally **daemon-focused** for the `testnet20260405` branch
 The codebase still contains `mine` and `verify`, but this document is written for operators who only run:
 
 ```bash
-./bin/colossusx daemon ...
+go run ./cmd/colossusx daemon ...
 ```
 
 ---
 
-## 1. Checkout and build
+## 1. Checkout and setup
 
 ```bash
 git clone https://github.com/CypherTroopers/colossus-x.git
@@ -19,8 +19,6 @@ git fetch --all
 git checkout testnet20260405
 
 go mod download
-mkdir -p bin
-go build -o bin/colossusx ./cmd/colossusx
 ```
 
 Requirements:
@@ -32,7 +30,7 @@ Quick checks:
 
 ```bash
 go version
-./bin/colossusx -h
+go run ./cmd/colossusx -h
 ```
 
 ---
@@ -107,7 +105,7 @@ Important:
 ### 4-1. Miner node
 
 ```bash
-./bin/colossusx daemon \
+go run ./cmd/colossusx daemon \
   -mode colossusx \
   -network devnet \
   -genesis-file ./configs/devnet/genesis.json \
@@ -129,7 +127,7 @@ Important:
 ### 4-2. Full node
 
 ```bash
-./bin/colossusx daemon \
+go run ./cmd/colossusx daemon \
   -mode colossusx \
   -network devnet \
   -genesis-file ./configs/devnet/genesis.json \
@@ -149,7 +147,7 @@ Important:
 ### 4-3. Light node
 
 ```bash
-./bin/colossusx daemon \
+go run ./cmd/colossusx daemon \
   -mode colossusx \
   -network devnet \
   -genesis-file ./configs/devnet/genesis.json \
@@ -292,15 +290,15 @@ go test ./...
 CLI smoke checks:
 
 ```bash
-./bin/colossusx -h
-./bin/colossusx daemon -h
+go run ./cmd/colossusx -h
+go run ./cmd/colossusx daemon -h
 ```
 
 ---
 
 ## 9. Practical notes for this branch
 
-- Use `./cmd/colossusx` / `./bin/colossusx`, not the repository root `main.go`, for daemon operation.
+- Use `go run ./cmd/colossusx`, not the repository root `main.go`, for daemon operation.
 - For multi-node testnet, keep `-genesis-file` identical on every node.
 - `coinbase` controls where block reward is credited in block state.
 - Transactions are accepted into mempool through `/tx` and packed up to `-max-txs-per-block`.
@@ -312,7 +310,7 @@ CLI smoke checks:
 ## 10. Minimal one-node devnet command
 
 ```bash
-./bin/colossusx daemon \
+go run ./cmd/colossusx daemon \
   -mode colossusx \
   -network devnet \
   -node-role miner \
