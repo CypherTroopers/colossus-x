@@ -36,19 +36,6 @@ type diskBlockEntry struct {
 	TotalWork string      `json:"total_work"`
 }
 
-type diskSnapshot struct {
-	GenesisHash string            `json:"genesis_hash"`
-	CurrentTip  string            `json:"current_tip"`
-	Blocks      []diskBlockRecord `json:"blocks"`
-	Heights     map[string]string `json:"heights"`
-	TotalWork   map[string]string `json:"total_work"`
-}
-
-type diskBlockRecord struct {
-	Hash  string      `json:"hash"`
-	Block types.Block `json:"block"`
-}
-
 func NewDiskStore(datadir string) (*DiskStore, error) {
 	if datadir == "" {
 		return nil, fmt.Errorf("datadir is required")
@@ -382,45 +369,4 @@ func (d *DiskStore) flushCanonicalLocked() error {
 		return err
 	}
 	return writeFileAtomic(d.metaPath, data, 0o644)
-}
-
-func bigIntToString(v *big.Int) string {
-	if v == nil {
-		return "0"
-	}
-	return v.String()
-}
-
-func bigIntFromString(s string) (*big.Int, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return big.NewInt(0), nil
-	}
-	out, ok := new(big.Int).SetString(s, 10)
-	if !ok {
-		return nil, fmt.Errorf("invalid bigint %q", s)
-	}
-	return out, nil
-}
-
-func hashFromString(s string) (types.Hash, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return types.Hash{}, nil
-	}
-	var out types.Hash
-	if err := out.UnmarshalJSON([]byte(`"` + s + `"`)); err != nil {
-		return types.Hash{}, err
-	}
-	return out, nil
-}
-
-func marshalSnapshot(snapshot diskSnapshot) ([]byte, error) {
-	return json.MarshalIndent(snapshot, "", "  ")
-}
-
-func unmarshalSnapshot(data []byte) (diskSnapshot, error) {
-	var snapshot diskSnapshot
-	err := json.Unmarshal(data, &snapshot)
-	return snapshot, err
 }
