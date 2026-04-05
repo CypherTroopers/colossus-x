@@ -1,16 +1,16 @@
-# Colossus-X
+# Colossus-X PowerShell Guide
 
-This document is the **PowerShell version** of the daemon-focused README for the `testnet20260405` branch.
+This file is for the `testnet20260405` branch and uses **PowerShell + go run only**.
 
-The codebase still contains `mine` and `verify`, but this document is written for operators who only run:
+Main command style:
 
 ```powershell
-.\bin\colossusx.exe daemon ...
+go run .\cmd\colossusx daemon ...
 ```
 
 ---
 
-## 1. Checkout and build
+## 1. Checkout
 
 ```powershell
 git clone https://github.com/CypherTroopers/colossus-x.git
@@ -19,46 +19,23 @@ git fetch --all
 git checkout testnet20260405
 
 go mod download
-New-Item -ItemType Directory -Force -Path .\bin | Out-Null
-go build -o .\bin\colossusx.exe .\cmd\colossusx
 ```
-
-Requirements:
-
-- Go `1.23.x`
-- optional: `make`
 
 Quick checks:
 
 ```powershell
 go version
-.\bin\colossusx.exe -h
+go run .\cmd\colossusx -h
+go run .\cmd\colossusx daemon -h
 ```
 
 ---
 
-## 2. What `daemon` does on this branch
+## 2. Recommended genesis file
 
-`daemon` starts the node runtime implemented in `cmd/colossusx/main.go` and `pkg/node/node.go`.
+Use the same `-genesis-file` on every node.
 
-Main behaviors on this branch:
-
-- loads or creates deterministic genesis in `datadir`
-- keeps canonical chain data on disk
-- preserves competing side branches in store
-- syncs blocks over the built-in P2P layer
-- can run as `miner`, `full`, or `light`
-- exposes optional HTTP endpoints when `-http` is set
-- supports mempool submission with `POST /tx`
-- uses `coinbase` for block rewards on mining nodes
-
----
-
-## 3. Recommended genesis file
-
-For multi-node testnet operation, use the same `-genesis-file` on every node.
-
-Example `configs/devnet/genesis.json`:
+Example `configs\devnet\genesis.json`:
 
 ```json
 {
@@ -79,35 +56,20 @@ Example `configs/devnet/genesis.json`:
 }
 ```
 
-Supported JSON fields on this branch:
-
-- `chain_id`
-- `message`
-- `timestamp`
-- `target`
-- `mode`
-- `initial_dag_mib`
-- `dag_growth_mib_per_epoch`
-- `extra_data`
-- `alloc`
-- `block_reward`
-- `target_block_time_millis`
-- `retarget_interval`
-
 Important:
 
 - if `datadir` already contains a different genesis, daemon exits with a genesis mismatch error
-- `alloc` becomes the initial on-chain account state
-- `block_reward`, `target_block_time_millis`, and `retarget_interval` are loaded into chain economics
+- `alloc` becomes the initial on-chain state
+- economics are loaded from the genesis file on this branch
 
 ---
 
-## 4. Daemon startup commands
+## 3. Daemon startup commands
 
-### 4-1. Miner node
+### Miner node
 
 ```powershell
-.\bin\colossusx.exe daemon `
+go run .\cmd\colossusx daemon `
   -mode colossusx `
   -network devnet `
   -genesis-file .\configs\devnet\genesis.json `
@@ -126,10 +88,10 @@ Important:
   -max-txs-per-block 256
 ```
 
-### 4-2. Full node
+### Full node
 
 ```powershell
-.\bin\colossusx.exe daemon `
+go run .\cmd\colossusx daemon `
   -mode colossusx `
   -network devnet `
   -genesis-file .\configs\devnet\genesis.json `
@@ -146,10 +108,10 @@ Important:
   -http :8081
 ```
 
-### 4-3. Light node
+### Light node
 
 ```powershell
-.\bin\colossusx.exe daemon `
+go run .\cmd\colossusx daemon `
   -mode colossusx `
   -network devnet `
   -genesis-file .\configs\devnet\genesis.json `
@@ -164,65 +126,33 @@ Important:
 Notes:
 
 - `-node-role miner` enables mining
-- `-node-role full` does not mine, but still runs the full node runtime
-- `-node-role light` skips mining runtime initialization and enables light validation mode
-- do **not** combine `-node-role` with legacy `-mine` or `-no-mine`
+- `-node-role full` does not mine
+- `-node-role light` enables light validation mode
+- do not combine `-node-role` with legacy `-mine` or `-no-mine`
 
 ---
 
-## 5. Daemon flags actually used on this branch
+## 4. HTTP API
 
-| Flag | Default | Meaning |
-|---|---:|---|
-| `-mode` | `colossusx` | Only `colossusx` is supported here. |
-| `-network` | `devnet` | Network / chain identifier. |
-| `-initial-dag-mib` | `32768` | Initial DAG size in MiB. |
-| `-dag-mib` | `0` | Deprecated alias for `-initial-dag-mib`. |
-| `-dag-growth-mib-per-epoch` | `256` | DAG growth in MiB per epoch. |
-| `-node-role` | `full` | `full`, `miner`, or `light`. |
-| `-mine` | `true` | Legacy behavior. Prefer `-node-role`. |
-| `-no-mine` | `false` | Legacy behavior. Prefer `-node-role`. |
-| `-workers` | `runtime.NumCPU()` | Worker count used by validator/miner runtime. |
-| `-max-nonces` | `500000` | Nonce search limit per block template. |
-| `-block-time` | `500ms` | Delay between locally mined blocks. |
-| `-genesis-message` | `colossusx devnet genesis` | Used only when `-genesis-file` is not provided. |
-| `-genesis-file` | `""` | Shared genesis JSON. Recommended. |
-| `-datadir` | `./data` | Node persistent chain data directory. |
-| `-listen` | `:30333` | P2P TCP listen address. |
-| `-bootnodes` | `""` | Comma-separated peers. |
-| `-node-id` | `""` | Stable node identifier. |
-| `-target` | `0fffffffff...` | Genesis / initial target when not using `-genesis-file`. |
-| `-miner-backend` | `opencl` | `auto`, `cuda`, `opencl`, `metal`, `cpu`, `unified`, `gpu`. |
-| `-miner-dag-alloc` | `auto` | `auto`, `go-heap`, `pinned-host`, `cuda-managed`, `opencl-svm`, `metal-shared`. |
-| `-http` | `""` | Optional HTTP API listen address. |
-| `-coinbase` | `""` | Reward address label. Defaults to `node-id` when empty. |
-| `-max-txs-per-block` | `256` | Maximum number of accepted mempool txs per mined block. |
-
----
-
-## 6. HTTP API
-
-HTTP server starts only when `-http` is set.
-
-### 6-1. Health
+### Health
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8080/health
 ```
 
-### 6-2. Node status
+### Status
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8080/status
 ```
 
-### 6-3. Current mempool
+### Mempool
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8080/mempool
 ```
 
-### 6-4. Submit transaction
+### Submit transaction
 
 ```powershell
 $body = @{
@@ -240,44 +170,15 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-### 6-5. Query block by height
+### Block by height
 
 ```powershell
 Invoke-RestMethod "http://127.0.0.1:8080/block?height=1"
 ```
 
-HTTP endpoints on this branch:
-
-- `GET /health`
-- `GET /status`
-- `GET /mempool`
-- `POST /tx`
-- `GET /block?height=<n>`
-
 ---
 
-## 7. P2P and sync behavior
-
-The built-in P2P runtime does the following:
-
-- exchanges `hello`, `status`, `ping`, `pong`
-- requests missing blocks with `sync request`
-- responds with canonical blocks from local store
-- broadcasts accepted new tip blocks
-- compares peer `total_work` during initial sync readiness
-
-Operational notes:
-
-- bootnodes are plain `host:port` entries separated by commas
-- if no peers are connected, a miner node starts immediately
-- if peers are connected but have no status yet, miner waits for sync metadata
-- frame size checks and duplicate/self-peer rejection are enabled in P2P code on this branch
-
----
-
-## 8. Test and validation commands
-
-Run the packages most relevant to daemon operation:
+## 5. Test commands
 
 ```powershell
 go test ./pkg/node -v
@@ -293,30 +194,12 @@ Full suite:
 go test ./...
 ```
 
-CLI smoke checks:
-
-```powershell
-.\bin\colossusx.exe -h
-.\bin\colossusx.exe daemon -h
-```
-
 ---
 
-## 9. Practical notes for this branch
-
-- Use `cmd/colossusx` / `bin/colossusx.exe`, not the repository root `main.go`, for daemon operation.
-- For multi-node testnet, keep `-genesis-file` identical on every node.
-- `coinbase` controls where block reward is credited in block state.
-- Transactions are accepted into mempool through `/tx` and packed up to `-max-txs-per-block`.
-- `full` nodes do not mine, but they still participate in validation, sync, and HTTP serving.
-- `light` nodes are the lightest daemon path on this branch.
-
----
-
-## 10. Minimal one-node devnet command
+## 6. Minimal one-node devnet command
 
 ```powershell
-.\bin\colossusx.exe daemon `
+go run .\cmd\colossusx daemon `
   -mode colossusx `
   -network devnet `
   -node-role miner `
@@ -328,5 +211,3 @@ CLI smoke checks:
   -miner-dag-alloc go-heap `
   -http :8080
 ```
-
-This is the shortest daemon-only startup path on this branch.
