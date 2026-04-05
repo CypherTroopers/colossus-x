@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	ColossusXInitialDAGSizeBytes   uint64 = 3 * 1024 * 1024 * 1024
+	ColossusXInitialDAGSizeBytes   uint64 = 8 * 1024 * 1024 * 1024
 	DefaultDAGGrowthBytesPerEpoch  uint64 = 256 * 1024 * 1024
 	ColossusXNodeSize              uint64 = 256
 	ColossusXReadsPerHash          uint64 = 128
