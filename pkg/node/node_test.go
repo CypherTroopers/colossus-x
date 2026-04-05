@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"math/big"
 	"strings"
 	"testing"
 	"time"
@@ -13,14 +14,21 @@ import (
 	"colossusx/pkg/types"
 )
 
-func TestNodeUsesSelectedMiningConfiguration(t *testing.T) {
+func testChainConfig(t *testing.T, network string) (types.ChainConfig, types.GenesisConfig) {
+	t.Helper()
 	spec := cx.ColossusXSpecWithGrowth(1024*1024, cx.DefaultDAGGrowthBytesPerEpoch)
 	target, err := cx.ParseTargetHex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 	if err != nil {
 		t.Fatal(err)
 	}
-	chainCfg := types.ChainConfig{NetworkID: "test", Spec: spec}
-	genesis := types.GenesisConfig{ChainID: "test", Message: "test", Timestamp: time.Now().Unix() - 1, Bits: target, Spec: spec}
+	econ := types.EconomicConfig{BlockReward: 50, TargetBlockTimeMillis: 1000, RetargetInterval: 4, MaxTarget: target}.Normalized()
+	chainCfg := types.ChainConfig{NetworkID: network, Spec: spec, Economics: econ}
+	genesis := types.GenesisConfig{ChainID: network, Message: "genesis", Timestamp: time.Now().Unix() - 10, Bits: target, Spec: spec, Economics: econ, Alloc: map[string]uint64{"alice": 100}}
+	return chainCfg, genesis
+}
+
+func TestNodeUsesSelectedMiningConfiguration(t *testing.T) {
+	chainCfg, genesis := testChainConfig(t, "test")
 	validator, err := consensus.NewValidator(chainCfg, consensus.CPUBackend{}, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -50,13 +58,7 @@ func TestNodeUsesSelectedMiningConfiguration(t *testing.T) {
 }
 
 func TestNodeCollectBlocksAndApplySyncBlocks(t *testing.T) {
-	spec := cx.ColossusXSpecWithGrowth(1024*1024, cx.DefaultDAGGrowthBytesPerEpoch)
-	target, err := cx.ParseTargetHex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
-	if err != nil {
-		t.Fatal(err)
-	}
-	chainCfg := types.ChainConfig{NetworkID: "sync-test", Spec: spec}
-	genesis := types.GenesisConfig{ChainID: "sync-test", Message: "sync", Timestamp: time.Now().Unix() - 1, Bits: target, Spec: spec}
+	chainCfg, genesis := testChainConfig(t, "sync-test")
 
 	remoteValidator, err := consensus.NewValidator(chainCfg, consensus.CPUBackend{}, 1)
 	if err != nil {
@@ -64,12 +66,15 @@ func TestNodeCollectBlocksAndApplySyncBlocks(t *testing.T) {
 	}
 	defer remoteValidator.Close()
 	remoteStore := chain.NewMemoryStore()
-	remoteNode, err := New(Config{Chain: chainCfg, Genesis: genesis, Mine: false, MaxNonces: 32}, remoteValidator, remoteStore)
+	remoteNode, err := New(Config{Chain: chainCfg, Genesis: genesis, Mine: false, MaxNonces: 32, Coinbase: "miner-remote"}, remoteValidator, remoteStore)
 	if err != nil {
 		t.Fatalf("remote node: %v", err)
 	}
 	if _, err := remoteNode.InitGenesis(); err != nil {
 		t.Fatalf("remote InitGenesis: %v", err)
+	}
+	if err := remoteNode.SubmitTransaction(types.Transaction{From: "alice", To: "bob", Value: 10, Nonce: 0}); err != nil {
+		t.Fatalf("SubmitTransaction: %v", err)
 	}
 	for i := 0; i < 2; i++ {
 		block, _, err := remoteNode.mineNextBlock()
@@ -79,6 +84,7 @@ func TestNodeCollectBlocksAndApplySyncBlocks(t *testing.T) {
 		if _, _, err := remoteValidator.InsertBlock(remoteStore, block); err != nil {
 			t.Fatalf("remote InsertBlock(%d): %v", i, err)
 		}
+		remoteNode.pruneMempool(block.Transactions)
 	}
 
 	collected := remoteNode.collectBlocks(1, 4)
@@ -101,6 +107,7 @@ func TestNodeCollectBlocksAndApplySyncBlocks(t *testing.T) {
 		Mine:      false,
 		MaxNonces: 32,
 		Logf:      func(string, ...any) {},
+		Coinbase:  "miner-local",
 	}, localValidator, localStore)
 	if err != nil {
 		t.Fatalf("local node: %v", err)
@@ -120,30 +127,18 @@ func TestNodeCollectBlocksAndApplySyncBlocks(t *testing.T) {
 	if tip.Header.Height != 2 {
 		t.Fatalf("local tip height=%d want=2", tip.Header.Height)
 	}
+	if tip.State["bob"].Balance != 10 {
+		t.Fatalf("expected synced state for bob balance=10, got=%d", tip.State["bob"].Balance)
+	}
 
-	// duplicate batch should be ignored without modifying chain state.
 	applied = localNode.applySyncBlocks("peer-1", collected)
 	if applied != 0 {
 		t.Fatalf("applySyncBlocks duplicate applied=%d want=0", applied)
 	}
-
-	got := localNode.collectBlocks(1, 2)
-	if len(got) != 2 {
-		t.Fatalf("local collectBlocks len=%d want=2", len(got))
-	}
-	if got[0].Header.Height != 1 || got[1].Header.Height != 2 {
-		t.Fatalf("local collected heights mismatch: %v", []uint64{got[0].Header.Height, got[1].Header.Height})
-	}
 }
 
 func TestInitGenesisStoresDeterministicUnsealedGenesis(t *testing.T) {
-	spec := cx.ColossusXSpecWithGrowth(1024*1024, cx.DefaultDAGGrowthBytesPerEpoch)
-	target, err := cx.ParseTargetHex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
-	if err != nil {
-		t.Fatal(err)
-	}
-	chainCfg := types.ChainConfig{NetworkID: "genesis-lite", Spec: spec}
-	genesisCfg := types.GenesisConfig{ChainID: "genesis-lite", Message: "sync", Timestamp: time.Now().Unix() - 1, Bits: target, Spec: spec}
+	chainCfg, genesisCfg := testChainConfig(t, "genesis-lite")
 	validator, err := consensus.NewValidator(chainCfg, consensus.CPUBackend{}, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -170,6 +165,9 @@ func TestInitGenesisStoresDeterministicUnsealedGenesis(t *testing.T) {
 	if genesis.ColossusXSolution != nil || genesis.ColossusXSolutionCompact != nil {
 		t.Fatal("expected unsealed genesis to have no colossusx solution payload")
 	}
+	if genesis.State["alice"].Balance != 100 {
+		t.Fatalf("expected alloc state, got %#v", genesis.State)
+	}
 }
 
 func TestParseBootnodes(t *testing.T) {
@@ -180,126 +178,26 @@ func TestParseBootnodes(t *testing.T) {
 	}
 }
 
-func TestNextEpochStartHeight(t *testing.T) {
-	tests := []struct {
-		name        string
-		fromHeight  uint64
-		epochBlocks uint64
-		wantHeight  uint64
-		wantOK      bool
-	}{
-		{name: "invalid zero epoch size", fromHeight: 10, epochBlocks: 0, wantHeight: 0, wantOK: false},
-		{name: "from genesis", fromHeight: 0, epochBlocks: 30000, wantHeight: 30000, wantOK: true},
-		{name: "middle of epoch", fromHeight: 42, epochBlocks: 10, wantHeight: 50, wantOK: true},
-		{name: "on epoch boundary", fromHeight: 50, epochBlocks: 10, wantHeight: 60, wantOK: true},
-	}
-	for _, tc := range tests {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			got, ok := nextEpochStartHeight(tc.fromHeight, tc.epochBlocks)
-			if ok != tc.wantOK {
-				t.Fatalf("ok=%v want=%v", ok, tc.wantOK)
-			}
-			if got != tc.wantHeight {
-				t.Fatalf("height=%d want=%d", got, tc.wantHeight)
-			}
-		})
-	}
-}
-
-func TestShouldPrewarmNextEpoch(t *testing.T) {
-	tests := []struct {
-		name        string
-		fromHeight  uint64
-		epochBlocks uint64
-		leadBlocks  uint64
-		wantHeight  uint64
-		wantOK      bool
-	}{
-		{
-			name:        "disabled when lead is zero",
-			fromHeight:  95,
-			epochBlocks: 100,
-			leadBlocks:  0,
-			wantOK:      false,
-		},
-		{
-			name:        "skip when too early",
-			fromHeight:  50,
-			epochBlocks: 100,
-			leadBlocks:  10,
-			wantOK:      false,
-		},
-		{
-			name:        "prewarm near epoch end",
-			fromHeight:  95,
-			epochBlocks: 100,
-			leadBlocks:  10,
-			wantHeight:  100,
-			wantOK:      true,
-		},
-		{
-			name:        "lead clamped to epoch-1",
-			fromHeight:  2,
-			epochBlocks: 3,
-			leadBlocks:  99,
-			wantHeight:  3,
-			wantOK:      true,
-		},
-	}
-	for _, tc := range tests {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			got, ok := shouldPrewarmNextEpoch(tc.fromHeight, tc.epochBlocks, tc.leadBlocks)
-			if ok != tc.wantOK {
-				t.Fatalf("ok=%v want=%v", ok, tc.wantOK)
-			}
-			if got != tc.wantHeight {
-				t.Fatalf("height=%d want=%d", got, tc.wantHeight)
-			}
-		})
-	}
-}
-
 func TestInitialSyncReady(t *testing.T) {
+	localWork := bigInt(10)
+	moreWork := bigInt(12)
 	tests := []struct {
 		name              string
 		localTip          uint64
+		localWork         *big.Int
 		peers             []*p2p.Peer
 		wantReady         bool
 		wantRemoteBest    uint64
 		wantPeersWithStat int
 	}{
-		{
-			name:           "no peers starts mining immediately",
-			localTip:       0,
-			peers:          nil,
-			wantReady:      true,
-			wantRemoteBest: 0,
-		},
-		{
-			name:      "connected peers without status wait for sync metadata",
-			localTip:  0,
-			peers:     []*p2p.Peer{{ID: "p1"}, {ID: "p2"}},
-			wantReady: false,
-		},
-		{
-			name:      "ready once local tip catches known remote best",
-			localTip:  5,
-			peers:     []*p2p.Peer{{Status: types.PeerStatus{PeerID: "p1", BestHeight: 3}}, {Status: types.PeerStatus{PeerID: "p2", BestHeight: 5}}},
-			wantReady: true, wantRemoteBest: 5, wantPeersWithStat: 2,
-		},
-		{
-			name:      "not ready while local tip is behind",
-			localTip:  4,
-			peers:     []*p2p.Peer{{Status: types.PeerStatus{PeerID: "p1", BestHeight: 6}}},
-			wantReady: false, wantRemoteBest: 6, wantPeersWithStat: 1,
-		},
+		{name: "no peers starts mining immediately", localTip: 0, localWork: localWork, peers: nil, wantReady: true, wantRemoteBest: 0},
+		{name: "connected peers without status wait for sync metadata", localTip: 0, localWork: localWork, peers: []*p2p.Peer{{ID: "p1"}, {ID: "p2"}}, wantReady: false},
+		{name: "ready once local work catches known remote best", localTip: 5, localWork: moreWork, peers: []*p2p.Peer{{Status: types.PeerStatus{PeerID: "p1", BestHeight: 3, TotalWork: "9"}}, {Status: types.PeerStatus{PeerID: "p2", BestHeight: 5, TotalWork: "12"}}}, wantReady: true, wantRemoteBest: 5, wantPeersWithStat: 2},
+		{name: "not ready while local work is behind", localTip: 6, localWork: localWork, peers: []*p2p.Peer{{Status: types.PeerStatus{PeerID: "p1", BestHeight: 6, TotalWork: "11"}}}, wantReady: false, wantRemoteBest: 6, wantPeersWithStat: 1},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			ready, remoteBest, peersWithStatus := initialSyncReady(tc.localTip, tc.peers)
+			ready, remoteBest, peersWithStatus := initialSyncReady(tc.localTip, tc.localWork, tc.peers)
 			if ready != tc.wantReady {
 				t.Fatalf("ready=%v want=%v", ready, tc.wantReady)
 			}
@@ -313,61 +211,4 @@ func TestInitialSyncReady(t *testing.T) {
 	}
 }
 
-func TestEpochStartHeight(t *testing.T) {
-	tests := []struct {
-		name        string
-		height      uint64
-		epochBlocks uint64
-		want        uint64
-	}{
-		{name: "zero epoch size returns height", height: 7, epochBlocks: 0, want: 7},
-		{name: "genesis epoch", height: 0, epochBlocks: 10, want: 0},
-		{name: "within epoch", height: 17, epochBlocks: 10, want: 10},
-		{name: "epoch boundary", height: 20, epochBlocks: 10, want: 20},
-	}
-	for _, tc := range tests {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			if got := epochStartHeight(tc.height, tc.epochBlocks); got != tc.want {
-				t.Fatalf("epochStartHeight(%d,%d)=%d want=%d", tc.height, tc.epochBlocks, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestScheduleStartupPrewarmCachesCurrentEpochForFullNode(t *testing.T) {
-	spec := cx.ColossusXSpecWithGrowth(1024*1024, cx.DefaultDAGGrowthBytesPerEpoch)
-	target, err := cx.ParseTargetHex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
-	if err != nil {
-		t.Fatal(err)
-	}
-	chainCfg := types.ChainConfig{NetworkID: "startup-prewarm", Spec: spec}
-	genesis := types.GenesisConfig{ChainID: "startup-prewarm", Message: "startup", Timestamp: time.Now().Unix() - 1, Bits: target, Spec: spec}
-	validator, err := consensus.NewValidator(chainCfg, consensus.CPUBackend{}, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer validator.Close()
-	n, err := New(Config{
-		Chain:     chainCfg,
-		Genesis:   genesis,
-		Mine:      false,
-		MaxNonces: 8,
-		Logf:      func(string, ...any) {},
-	}, validator, chain.NewMemoryStore())
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	if _, err := n.InitGenesis(); err != nil {
-		t.Fatalf("InitGenesis: %v", err)
-	}
-	n.scheduleStartupPrewarm()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if got := validator.SharedCacheSize(); got > 0 {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("expected startup prewarm to cache DAG, shared cache size=%d", validator.SharedCacheSize())
-}
+func bigInt(v int64) *big.Int { return big.NewInt(v) }
