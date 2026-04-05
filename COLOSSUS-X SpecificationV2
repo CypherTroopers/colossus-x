@@ -427,11 +427,11 @@ Memory budget: DAG (32 GB) + Merkle tree (~20 GB) + kernel overhead (~2 GB) ≈ 
 
 | PARAMETER | SYMBOL | VALUE |
 |---|---|---|
-| DAG size (epoch 0) | D₀ | 80 GB (85,899,345,920 bytes) |
+| DAG size (epoch 0) | D₀ | 32 GB  |
 | DAG cell size | C | 256 bytes |
 | Seed cache size | S | 512 MB |
 | Cache entry size | — | 64 bytes (SHA3-512 output) |
-| Cache lookups per cell | — | 256 |
+| Cache lookups per cell | — | 128 |
 | DAG reads per nonce | R | 128 |
 | Audit cells per solution | K | 32 |
 | Epoch length | E | 7,200 blocks |
