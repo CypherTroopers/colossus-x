@@ -135,7 +135,7 @@ go run ./cmd/colossusx daemon \
   -max-nonces 500000 \
   -block-time 18000ms \
   -datadir ./data/full-01 \
-  -listen :30334 \
+  -listen :30333 \
   -bootnodes 161.97.184.220:30333 \
   -node-id full-01 \
   -miner-backend auto \
@@ -152,7 +152,7 @@ go run ./cmd/colossusx daemon \
   -genesis-file ./configs/devnet/genesis.json \
   -node-role light \
   -datadir ./data/light-01 \
-  -listen :30335 \
+  -listen :30333 \
   -bootnodes 161.97.184.220:30333,62.169.24.158:30333 \
   -node-id light-01 \
   -http :8082
