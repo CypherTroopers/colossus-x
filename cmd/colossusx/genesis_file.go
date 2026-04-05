@@ -12,14 +12,18 @@ import (
 )
 
 type genesisFileDocument struct {
-	ChainID              string `json:"chain_id"`
-	Message              string `json:"message,omitempty"`
-	Timestamp            int64  `json:"timestamp"`
-	TargetHex            string `json:"target"`
-	Mode                 string `json:"mode,omitempty"`
-	InitialDAGMiB        uint64 `json:"initial_dag_mib,omitempty"`
-	DAGGrowthMiBPerEpoch uint64 `json:"dag_growth_mib_per_epoch,omitempty"`
-	ExtraData            string `json:"extra_data,omitempty"`
+	ChainID               string            `json:"chain_id"`
+	Message               string            `json:"message,omitempty"`
+	Timestamp             int64             `json:"timestamp"`
+	TargetHex             string            `json:"target"`
+	Mode                  string            `json:"mode,omitempty"`
+	InitialDAGMiB         uint64            `json:"initial_dag_mib,omitempty"`
+	DAGGrowthMiBPerEpoch  uint64            `json:"dag_growth_mib_per_epoch,omitempty"`
+	ExtraData             string            `json:"extra_data,omitempty"`
+	Alloc                 map[string]uint64 `json:"alloc,omitempty"`
+	BlockReward           uint64            `json:"block_reward,omitempty"`
+	TargetBlockTimeMillis uint64            `json:"target_block_time_millis,omitempty"`
+	RetargetInterval      uint64            `json:"retarget_interval,omitempty"`
 }
 
 func loadGenesisConfigFromFile(path string) (types.GenesisConfig, error) {
@@ -62,7 +66,15 @@ func loadGenesisConfigFromFile(path string) (types.GenesisConfig, error) {
 		Bits:      target,
 		Spec:      spec,
 		ExtraData: doc.ExtraData,
+		Alloc:     doc.Alloc,
+		Economics: types.EconomicConfig{
+			BlockReward:           doc.BlockReward,
+			TargetBlockTimeMillis: doc.TargetBlockTimeMillis,
+			RetargetInterval:      doc.RetargetInterval,
+			MaxTarget:             target,
+		},
 	}
+	cfg.Economics = cfg.Economics.Normalized()
 	return cfg, nil
 }
 
