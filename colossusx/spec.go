@@ -7,10 +7,10 @@ import (
 )
 
 const (
-	ColossusXInitialDAGSizeBytes   uint64 = 8 * 1024 * 1024 * 1024
-	DefaultDAGGrowthBytesPerEpoch  uint64 = 256 * 1024 * 1024
+	ColossusXInitialDAGSizeBytes   uint64 = 32 * 1024 * 1024 * 1024
+	DefaultDAGGrowthBytesPerEpoch  uint64 = 48 * 1024 * 1024
 	ColossusXNodeSize              uint64 = 256
-	ColossusXReadsPerHash          uint64 = 128
+	ColossusXReadsPerHash          uint64 = 64
 	ColossusXEpochBlocks           uint64 = 7200
 	ColossusXEpochPrecomputeWindow uint64 = 1000
 	ColossusXEpochGraceBlocks      uint64 = 64
@@ -72,7 +72,7 @@ func ColossusXSpec() Spec {
 		MemoryModelRequired:    MemoryModelUnifiedShared,
 		DeviceExecutionOnly:    true,
 		RoundCommitInterval:    ColossusXRoundCommitPeriod,
-		AlgorithmVersion:       2,
+		AlgorithmVersion:       ColossusXAlgorithmVersionScratchpad,
 	}
 }
 
@@ -128,7 +128,6 @@ func (s Spec) Validate() error {
 	}
 	switch s.Mode {
 	case ModeColossusX:
-		// colossusx is the only supported mode.
 	default:
 		return fmt.Errorf("unsupported mode %q", s.Mode)
 	}

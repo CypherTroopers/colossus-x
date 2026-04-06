@@ -188,6 +188,9 @@ func NewGenesisBlock(cfg GenesisConfig) Block {
 }
 
 func EpochSeedForHeight(spec cx.Spec, height uint64) Hash {
+	if spec.IsAppendOnlyScratchpad() {
+		return Hash(cx.CycleSeedForHeight(spec, height))
+	}
 	var seedMaterial [40]byte
 	epoch := uint64(0)
 	if spec.EpochBlocks != 0 {
