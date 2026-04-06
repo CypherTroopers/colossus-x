@@ -145,29 +145,6 @@ func NewMerkleSidecarFromAccessor(accessor DAGAccessor, nodeSize uint64) (*Merkl
 	return &MerkleSidecar{levels: buildMerkleLevels(leaves)}, nil
 }
 
-func buildMerkleLevels(leaves [][32]byte) [][][32]byte {
-	levels := make([][][32]byte, 0, 8)
-	cur := append([][32]byte(nil), leaves...)
-	levels = append(levels, cur)
-	for len(cur) > 1 {
-		next := make([][32]byte, (len(cur)+1)/2)
-		for i := 0; i < len(next); i++ {
-			left := cur[i*2]
-			right := left
-			if i*2+1 < len(cur) {
-				right = cur[i*2+1]
-			}
-			var in [64]byte
-			copy(in[:32], left[:])
-			copy(in[32:], right[:])
-			next[i] = blake3.Sum256(in[:])
-		}
-		cur = next
-		levels = append(levels, cur)
-	}
-	return levels
-}
-
 func (m *MerkleSidecar) Root() [32]byte {
 	if m == nil || len(m.levels) == 0 {
 		return [32]byte{}
