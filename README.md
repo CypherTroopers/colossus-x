@@ -110,16 +110,13 @@ go run ./cmd/colossusx daemon \
   -network devnet \
   -genesis-file ./configs/devnet/genesis.json \
   -node-role miner \
-  -workers 16 \
-  -max-nonces 500000 \
-  -block-time 18000ms \
   -datadir ./data/miner-01 \
   -listen :30333 \
   -node-id miner-01 \
   -coinbase miner-01 \
   -miner-backend auto \
   -miner-dag-alloc auto \
-  -http :8080 \
+  -http :8088 \
   -max-txs-per-block 256
 ```
 
@@ -131,16 +128,13 @@ go run ./cmd/colossusx daemon \
   -network devnet \
   -genesis-file ./configs/devnet/genesis.json \
   -node-role full \
-  -workers 16 \
-  -max-nonces 500000 \
-  -block-time 18000ms \
   -datadir ./data/full-01 \
   -listen :30333 \
   -bootnodes 161.97.184.220:30333 \
   -node-id full-01 \
   -miner-backend auto \
   -miner-dag-alloc auto \
-  -http :8081
+  -http :8088
 ```
 
 ### 4-3. Light node
@@ -155,7 +149,7 @@ go run ./cmd/colossusx daemon \
   -listen :30333 \
   -bootnodes 161.97.184.220:30333,62.169.24.158:30333 \
   -node-id light-01 \
-  -http :8082
+  -http :8088
 ```
 
 Notes:
