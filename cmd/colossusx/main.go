@@ -144,7 +144,7 @@ func parseDaemonFlags(args []string) (daemonConfig, error) {
 	mine := fs.Bool("mine", true, "enable local mining loop")
 	noMine := fs.Bool("no-mine", false, "disable local mining loop")
 	workers := fs.Int("workers", runtime.NumCPU(), "mining workers")
-	maxNonces := fs.Uint64("max-nonces", 500000, "maximum nonce range per block template")
+	maxNonces := fs.Uint64("max-nonces", cx.DefaultTemplateMaxNonces, "maximum nonce range per block template (0 uses default)")
 	blockTime := fs.Duration("block-time", 500*time.Millisecond, "delay between mined blocks")
 	genesisMessage := fs.String("genesis-message", "colossusx devnet genesis", "genesis message")
 	genesisFile := fs.String("genesis-file", "", "path to genesis JSON file")
@@ -270,7 +270,7 @@ func runVerify(args []string) error {
 	if *dagMiB != 0 { *initialDAGMiB = *dagMiB }
 	header, block, err := loadVerifyInput(*headerPath, *blockPath)
 	if err != nil { return err }
-	spec, err := specFromHeader(cx.Mode(*modeName), header, (*initialDAGMiB)*1024*1024, (*dagGrowthMiB)*1024*1024)
+	spec, err := specFromHeader(cx.Mode(*modeName), header, initialDAGBytesToBytes(*initialDAGMiB), initialDAGBytesToBytes(*dagGrowthMiB))
 	if err != nil { return err }
 	expectedSeed := types.EpochSeedForHeight(spec, header.Height)
 	if expectedSeed != header.EpochSeed { return fmt.Errorf("epoch seed mismatch: expected=%s got=%s", expectedSeed.String(), header.EpochSeed.String()) }
@@ -311,6 +311,7 @@ func loadVerifyInput(headerPath, blockPath string) (types.BlockHeader, *types.Bl
 	}
 }
 func readJSONFile(path string, out any) error { data, err := os.ReadFile(path); if err != nil { return err }; if err := json.Unmarshal(data, out); err != nil { return fmt.Errorf("decode %s: %w", path, err) }; return nil }
+func initialDAGBytesToBytes(v uint64) uint64 { return v * 1024 * 1024 }
 func specFromHeader(mode cx.Mode, header types.BlockHeader, initialDAGBytes, growthBytes uint64) (cx.Spec, error) {
 	var spec cx.Spec
 	switch mode {

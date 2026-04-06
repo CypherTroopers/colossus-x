@@ -18,6 +18,8 @@ const (
 	BackendMetal   BackendMode = "metal"
 	BackendUnified BackendMode = "unified"
 	BackendGPU     BackendMode = "gpu"
+
+	DefaultTemplateMaxNonces uint64 = 50000
 )
 
 type HashBackend interface {
@@ -60,7 +62,16 @@ func NewMiner(spec Spec, dag *DAG, workers int, backend HashBackend) (*Miner, er
 	}
 	return &Miner{spec: spec, dag: dag, workers: workers, backend: backend}, nil
 }
+
+func normalizeTemplateMaxNonces(maxNonces uint64) uint64 {
+	if maxNonces == 0 {
+		return DefaultTemplateMaxNonces
+	}
+	return maxNonces
+}
+
 func (m *Miner) Mine(header []byte, target Target, startNonce Nonce, maxNonces uint64) (MineResult, bool) {
+	maxNonces = normalizeTemplateMaxNonces(maxNonces)
 	if batchBackend, ok := m.backend.(BatchHashBackend); ok {
 		return m.mineBatch(header, target, startNonce, maxNonces, batchBackend)
 	}
@@ -88,12 +99,10 @@ func (m *Miner) Mine(header []byte, target Target, startNonce Nonce, maxNonces u
 				if ctx.Err() != nil || found.Load() {
 					return
 				}
-				if maxNonces > 0 {
-					if start64, ok := startNonce.(Uint64Nonce); ok {
-						if nonce64, ok := nonce.(Uint64Nonce); ok {
-							if uint64(nonce64)-uint64(start64) >= maxNonces {
-								return
-							}
+				if start64, ok := startNonce.(Uint64Nonce); ok {
+					if nonce64, ok := nonce.(Uint64Nonce); ok {
+						if uint64(nonce64)-uint64(start64) >= maxNonces {
+							return
 						}
 					}
 				}
@@ -123,11 +132,10 @@ func (m *Miner) Mine(header []byte, target Target, startNonce Nonce, maxNonces u
 	hashes := totalHashes.Load()
 	return MineResult{Nonce: msg.nonce, Hashes: hashes, Elapsed: elapsed, HashRate: float64(hashes) / elapsed.Seconds(), Hash256Hex: hex.EncodeToString(msg.hash.Pow256[:]), Hash512Hex: hex.EncodeToString(msg.hash.Full512[:]), Backend: m.backend.Mode()}, true
 }
+
 func (m *Miner) mineBatch(header []byte, target Target, startNonce Nonce, maxNonces uint64, batchBackend BatchHashBackend) (MineResult, bool) {
+	maxNonces = normalizeTemplateMaxNonces(maxNonces)
 	start := time.Now()
-	if maxNonces == 0 {
-		maxNonces = 100000
-	}
 	results, err := batchBackend.HashBatch(header, startNonce, maxNonces, m.dag)
 	if err != nil {
 		return MineResult{}, false
@@ -142,6 +150,7 @@ func (m *Miner) mineBatch(header []byte, target Target, startNonce Nonce, maxNon
 	}
 	return MineResult{}, false
 }
+
 func Benchmark(m *Miner, header []byte, startNonce Nonce, maxNonces uint64) MineResult {
 	if maxNonces == 0 {
 		maxNonces = 100000
