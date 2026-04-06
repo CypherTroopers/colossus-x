@@ -1,6 +1,7 @@
 package colossusx
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -13,13 +14,14 @@ import (
 const (
 	ColossusXAlgorithmVersionScratchpad uint32 = 3
 
-	ColossusXScratchpadBaseSizeBytes   uint64 = 32 * 1024 * 1024 * 1024
-	ColossusXScratchpadGrowthBytes     uint64 = 48 * 1024 * 1024
-	ColossusXScratchpadGrowthWindow    uint64 = 300
-	ColossusXScratchpadReadsPerHash    uint64 = 64
-	ColossusXScratchpadPrefixParents   uint32 = 6
-	ColossusXScratchpadSuffixParents   uint32 = 2
-	ColossusXScratchpadParentCount     uint32 = ColossusXScratchpadPrefixParents + ColossusXScratchpadSuffixParents
+	ColossusXScratchpadBaseSizeBytes uint64 = 32 * 1024 * 1024 * 1024
+	ColossusXScratchpadGrowthBytes   uint64 = 48 * 1024 * 1024
+	ColossusXScratchpadGrowthWindow  uint64 = 300
+
+	ColossusXScratchpadReadsPerHash  uint64 = 64
+	ColossusXScratchpadPrefixParents uint32 = 6
+	ColossusXScratchpadSuffixParents uint32 = 2
+	ColossusXScratchpadParentCount   uint32 = ColossusXScratchpadPrefixParents + ColossusXScratchpadSuffixParents
 )
 
 func ColossusXSpecAppendOnly() Spec {
@@ -85,7 +87,10 @@ func (s Spec) ScratchpadActiveGrowthTilesAtHeight(height uint64) uint64 {
 
 func (s Spec) ScratchpadActiveSizeForHeight(height uint64) uint64 {
 	if !s.IsAppendOnlyScratchpad() {
-		return s.DAGSizeForEpoch(height / max64(1, s.EpochBlocks))
+		if s.EpochBlocks == 0 {
+			return s.DAGSizeForEpoch(0)
+		}
+		return s.DAGSizeForEpoch(height / s.EpochBlocks)
 	}
 	base := s.initialDAGSize()
 	growth := s.growthDAGSizePerEpoch()
@@ -106,11 +111,18 @@ func (s Spec) ScratchpadActiveSizeForHeight(height uint64) uint64 {
 	return base + s.ScratchpadActiveGrowthTilesAtHeight(height)*tileBytes
 }
 
-func max64(a, b uint64) uint64 {
-	if a > b {
-		return a
+func CycleSeedForCycle(spec Spec, cycle uint64) [32]byte {
+	var seedMaterial [40]byte
+	binary.BigEndian.PutUint64(seedMaterial[:8], cycle)
+	copy(seedMaterial[8:], spec.GenesisHash[:])
+	return sha3.Sum256(seedMaterial[:])
+}
+
+func CycleSeedForHeight(spec Spec, height uint64) [32]byte {
+	if spec.EpochBlocks == 0 {
+		return CycleSeedForCycle(spec, 0)
 	}
-	return b
+	return CycleSeedForCycle(spec, height/spec.EpochBlocks)
 }
 
 type MerkleSidecar struct {
@@ -131,6 +143,29 @@ func NewMerkleSidecarFromAccessor(accessor DAGAccessor, nodeSize uint64) (*Merkl
 		leaves[i] = blake3.Sum256(cell)
 	}
 	return &MerkleSidecar{levels: buildMerkleLevels(leaves)}, nil
+}
+
+func buildMerkleLevels(leaves [][32]byte) [][][32]byte {
+	levels := make([][][32]byte, 0, 8)
+	cur := append([][32]byte(nil), leaves...)
+	levels = append(levels, cur)
+	for len(cur) > 1 {
+		next := make([][32]byte, (len(cur)+1)/2)
+		for i := 0; i < len(next); i++ {
+			left := cur[i*2]
+			right := left
+			if i*2+1 < len(cur) {
+				right = cur[i*2+1]
+			}
+			var in [64]byte
+			copy(in[:32], left[:])
+			copy(in[32:], right[:])
+			next[i] = blake3.Sum256(in[:])
+		}
+		cur = next
+		levels = append(levels, cur)
+	}
+	return levels
 }
 
 func (m *MerkleSidecar) Root() [32]byte {
@@ -165,6 +200,122 @@ func (m *MerkleSidecar) Proof(index uint64) (MerkleProof, error) {
 	return proof, nil
 }
 
+type prefixAccessor struct {
+	buf      []byte
+	nodeSize uint64
+	count    uint64
+}
+
+func (p prefixAccessor) NodeCount() uint64 { return p.count }
+func (p prefixAccessor) ReadNode(i uint64, out []byte) {
+	off := i * p.nodeSize
+	copy(out, p.buf[off:off+p.nodeSize])
+}
+
+func PopulateAppendOnlyScratchpadForResolvedImage(dag *DAG, epochSeed []byte, workers int) error {
+	if dag == nil {
+		return fmt.Errorf("dag cannot be nil")
+	}
+	if !dag.Spec().IsAppendOnlyScratchpad() {
+		return fmt.Errorf("append-only scratchpad requires algorithm_version >= %d", ColossusXAlgorithmVersionScratchpad)
+	}
+	cycle, partialBytes, err := inferScratchpadCycleAndPartial(dag.Spec(), epochSeed, dag.Spec().DAGSizeBytes)
+	if err != nil {
+		return err
+	}
+	buf := dag.Bytes()
+	nodeSize := dag.Spec().NodeSize
+	baseCells := dag.Spec().initialDAGSize() / nodeSize
+	if baseCells > dag.NodeCount() {
+		return fmt.Errorf("base scratchpad exceeds allocation")
+	}
+	seed0 := CycleSeedForCycle(dag.Spec(), 0)
+	if err := PopulateAppendOnlyScratchpadV3Range(dag, seed0[:], [32]byte{}, 0, baseCells, workers, nil); err != nil {
+		return err
+	}
+	rootPrev, err := rootForPrefix(buf, nodeSize, baseCells)
+	if err != nil {
+		return err
+	}
+	builtCells := baseCells
+	fullGrowthCells := dag.Spec().growthDAGSizePerEpoch() / nodeSize
+	for c := uint64(0); c < cycle; c++ {
+		seed := CycleSeedForCycle(dag.Spec(), c)
+		end := builtCells + fullGrowthCells
+		if end > dag.NodeCount() {
+			return fmt.Errorf("cycle %d full growth exceeds allocation", c)
+		}
+		if err := PopulateAppendOnlyScratchpadV3Range(dag, seed[:], rootPrev, builtCells, end, workers, nil); err != nil {
+			return err
+		}
+		builtCells = end
+		rootPrev, err = rootForPrefix(buf, nodeSize, builtCells)
+		if err != nil {
+			return err
+		}
+	}
+	if partialBytes > 0 {
+		partialCells := partialBytes / nodeSize
+		if end := builtCells + partialCells; end > dag.NodeCount() {
+			return fmt.Errorf("partial growth exceeds allocation")
+		} else if partialCells > 0 {
+			if err := PopulateAppendOnlyScratchpadV3Range(dag, epochSeed, rootPrev, builtCells, end, workers, nil); err != nil {
+				return err
+			}
+			builtCells = end
+		}
+	}
+	if builtCells != dag.NodeCount() {
+		return fmt.Errorf("scratchpad build incomplete built=%d want=%d", builtCells, dag.NodeCount())
+	}
+	return nil
+}
+
+func inferScratchpadCycleAndPartial(spec Spec, epochSeed []byte, size uint64) (uint64, uint64, error) {
+	if !spec.IsAppendOnlyScratchpad() {
+		return 0, 0, fmt.Errorf("spec is not append-only scratchpad")
+	}
+	if len(epochSeed) == 0 {
+		return 0, 0, fmt.Errorf("epoch seed cannot be empty")
+	}
+	base := spec.initialDAGSize()
+	growth := spec.growthDAGSizePerEpoch()
+	if size < base {
+		return 0, 0, fmt.Errorf("scratchpad size %d is below base %d", size, base)
+	}
+	delta := size - base
+	cycleHint := uint64(0)
+	if growth > 0 {
+		cycleHint = delta / growth
+	}
+	for c := uint64(0); c <= cycleHint+1; c++ {
+		seed := CycleSeedForCycle(spec, c)
+		if !bytes.Equal(seed[:], epochSeed) {
+			continue
+		}
+		fullPrefix := base + c*growth
+		if size < fullPrefix {
+			continue
+		}
+		partial := size - fullPrefix
+		if partial <= growth {
+			return c, partial, nil
+		}
+	}
+	return 0, 0, fmt.Errorf("unable to infer scratchpad cycle from size=%d and epoch seed", size)
+}
+
+func rootForPrefix(buf []byte, nodeSize, count uint64) ([32]byte, error) {
+	if count == 0 {
+		return [32]byte{}, nil
+	}
+	sidecar, err := NewMerkleSidecarFromAccessor(prefixAccessor{buf: buf, nodeSize: nodeSize, count: count}, nodeSize)
+	if err != nil {
+		return [32]byte{}, err
+	}
+	return sidecar.Root(), nil
+}
+
 func PopulateAppendOnlyScratchpadV3(dag *DAG, epochSeed []byte, prevRoot [32]byte, workers int) error {
 	return PopulateAppendOnlyScratchpadV3Range(dag, epochSeed, prevRoot, 0, dag.NodeCount(), workers, nil)
 }
@@ -185,7 +336,7 @@ func PopulateAppendOnlyScratchpadV3Range(dag *DAG, epochSeed []byte, prevRoot [3
 	if startCell > endCell {
 		return fmt.Errorf("invalid cell range [%d,%d)", startCell, endCell)
 	}
-	_ = workers // reserved for future tile-parallel generator
+	_ = workers
 	if progress != nil {
 		progress(0, endCell-startCell)
 	}
@@ -211,6 +362,7 @@ func generateAppendOnlyScratchpadCellV3(buf []byte, spec Spec, epochSeed []byte,
 	copy(seedInput[32:64], epochSeed)
 	binary.LittleEndian.PutUint64(seedInput[64:], cellIndex)
 	mix := sha3.Sum512(seedInput[:])
+
 	parent := make([]byte, spec.NodeSize)
 	prefixCount := growthStartCell
 	suffixCount := uint64(0)
