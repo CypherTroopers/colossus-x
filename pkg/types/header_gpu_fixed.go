@@ -6,13 +6,12 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-// GPUFixedMiningHeaderV1 is a fixed-length proposal for GPU/device execution.
-// It is intentionally NOT consensus-active yet. CPU and device paths must be
-// switched together before it can replace EncodeForMining.
+// GPUFixedMiningHeaderV1 is the canonical fixed-length mining header encoding
+// used by CPU, validator, and device execution paths.
 //
 // Layout size: 256 bytes exactly.
-// Nonce is not included here; device kernels append the nonce separately.
-// That means kernels using this proposal need an input buffer >= 264 bytes.
+// Nonce is appended separately by mining backends/device kernels, so the full
+// hashing input size is 264 bytes.
 type GPUFixedMiningHeaderV1 struct {
 	Version          uint32
 	AlgorithmVersion uint32

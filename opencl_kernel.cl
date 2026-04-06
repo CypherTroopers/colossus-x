@@ -188,7 +188,7 @@ __kernel void colossusx_hash(
 ) {
     size_t gid = get_global_id(0);
     ulong nonce = start_nonce + (ulong)gid;
-    __private uchar initial_input[256];
+    __private uchar initial_input[264];
     __private uchar initial[64];
     __private uchar state[64];
     __private uchar salt_in[80];
@@ -204,7 +204,7 @@ __kernel void colossusx_hash(
         for (uint i = 0; i < 64; ++i) out[gid].Full512[i] = 0;
         return;
     }
-    if (header_len + 8U > 256U) return;
+    if (header_len + 8U > 264U) return;
 
     for (uint i = 0; i < header_len; ++i) initial_input[i] = header[i];
     for (uint i = 0; i < 8; ++i) initial_input[header_len + i] = (uchar)(nonce >> (8U * i));
