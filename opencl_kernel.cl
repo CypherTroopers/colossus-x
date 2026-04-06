@@ -1,9 +1,6 @@
 #pragma OPENCL EXTENSION cl_khr_byte_addressable_store : enable
 #pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
 
-__constant ulong COLOSSUSX_FNV_OFFSET = 14695981039346656037UL;
-__constant ulong COLOSSUSX_FNV_PRIME = 1099511628211UL;
-
 __constant ulong KECCAKF_RNDC[24] = {
     0x0000000000000001UL, 0x0000000000008082UL,
     0x800000000000808aUL, 0x8000000080008000UL,
@@ -48,42 +45,24 @@ typedef struct {
     uchar Full512[64];
 } opencl_hash_result;
 
-inline ulong rotl64(ulong x, uint n) {
-    return (x << n) | (x >> (64U - n));
-}
-
-inline uint rotr32(uint x, uint n) {
-    return (x >> n) | (x << (32U - n));
-}
-
+inline ulong rotl64(ulong x, uint n) { return (x << n) | (x >> (64U - n)); }
+inline uint rotr32(uint x, uint n) { return (x >> n) | (x << (32U - n)); }
 inline ulong load64_le_private(__private const uchar *src) {
     ulong out = 0;
     for (uint i = 0; i < 8; ++i) out |= ((ulong)src[i]) << (8U * i);
     return out;
 }
-
 inline uint load32_le_private(__private const uchar *src) {
     return ((uint)src[0]) | ((uint)src[1] << 8) | ((uint)src[2] << 16) | ((uint)src[3] << 24);
 }
-
 inline void store64_le_private(__private uchar *dst, ulong value) {
     for (uint i = 0; i < 8; ++i) dst[i] = (uchar)(value >> (8U * i));
 }
-
 inline void store32_le_private(__private uchar *dst, uint value) {
     dst[0] = (uchar)(value);
     dst[1] = (uchar)(value >> 8);
     dst[2] = (uchar)(value >> 16);
     dst[3] = (uchar)(value >> 24);
-}
-
-inline ulong colossusx_fnv1a40(__private const uchar *data) {
-    ulong h = COLOSSUSX_FNV_OFFSET;
-    for (uint i = 0; i < 40; ++i) {
-        h ^= (ulong)data[i];
-        h *= COLOSSUSX_FNV_PRIME;
-    }
-    return h;
 }
 
 inline void keccakf(__private ulong st[25]) {
@@ -139,7 +118,6 @@ inline void blake3_g(__private uint st[16], uint a, uint b, uint c, uint d, uint
     st[c] = st[c] + st[d];
     st[b] = rotr32(st[b] ^ st[c], 7);
 }
-
 inline void blake3_round_fn(__private uint st[16], __private const uint msg[16]) {
     blake3_g(st, 0, 4, 8, 12, msg[0], msg[1]);
     blake3_g(st, 1, 5, 9, 13, msg[2], msg[3]);
@@ -150,13 +128,11 @@ inline void blake3_round_fn(__private uint st[16], __private const uint msg[16])
     blake3_g(st, 2, 7, 8, 13, msg[12], msg[13]);
     blake3_g(st, 3, 4, 9, 14, msg[14], msg[15]);
 }
-
 inline void blake3_permute(__private uint msg[16]) {
     __private uint tmp[16];
     for (uint i = 0; i < 16; ++i) tmp[i] = msg[BLAKE3_MSG_PERMUTATION[i]];
     for (uint i = 0; i < 16; ++i) msg[i] = tmp[i];
 }
-
 inline void blake3_compress_xof(
     __private const uint cv[8],
     __private const uint block_words[16],
@@ -181,21 +157,23 @@ inline void blake3_compress_xof(
         out_words[i + 8] = st[i + 8] ^ cv[i];
     }
 }
-
-inline void blake3_hash_64(__private const uchar msg[64], __private uchar out[32]) {
+inline void blake3_hash_128(__private const uchar msg[128], __private uchar out[32]) {
     __private uint block_words[16];
     __private uint xof[16];
     for (uint i = 0; i < 16; ++i) block_words[i] = load32_le_private(msg + i * 4U);
-    blake3_compress_xof(
-        BLAKE3_IV,
-        block_words,
-        0U,
-        0U,
-        64U,
-        BLAKE3_FLAG_CHUNK_START | BLAKE3_FLAG_CHUNK_END | BLAKE3_FLAG_ROOT,
-        xof
-    );
+    blake3_compress_xof(BLAKE3_IV, block_words, 0U, 0U, 64U, BLAKE3_FLAG_CHUNK_START, xof);
+    __private uint cv2[8];
+    for (uint i = 0; i < 8; ++i) cv2[i] = xof[i];
+    for (uint i = 0; i < 16; ++i) block_words[i] = load32_le_private(msg + 64U + i * 4U);
+    blake3_compress_xof(cv2, block_words, 0U, 0U, 64U, BLAKE3_FLAG_CHUNK_END | BLAKE3_FLAG_ROOT, xof);
     for (uint i = 0; i < 8; ++i) store32_le_private(out + i * 4U, xof[i]);
+}
+
+inline uint fnv1a32_kernel(uint a, uint b) { return (a ^ b) * 0x01000193U; }
+inline char clamp_i8(int v) {
+    if (v > 127) return (char)127;
+    if (v < -128) return (char)-128;
+    return (char)v;
 }
 
 __kernel void colossusx_hash(
@@ -210,37 +188,71 @@ __kernel void colossusx_hash(
 ) {
     size_t gid = get_global_id(0);
     ulong nonce = start_nonce + (ulong)gid;
-    __private uchar seed_input[256];
-    __private uchar seed512[64];
-    __private uchar mix[32];
-    __private uchar fnv_input[40];
-    __private uchar node[64];
-    __private uchar blake_input[64];
-    __private uchar final_input[96];
-    if (node_count == 0UL || node_size < 64U) {
+    __private uchar initial_input[256];
+    __private uchar initial[64];
+    __private uchar state[64];
+    __private uchar salt_in[80];
+    __private uchar salt[64];
+    __private uchar mix_digest[64];
+    __private uchar final_input[128];
+    __private uchar pow256[32];
+    __private char v0[16], v1[16], v2[16], v3[16];
+    __private int A[16], B[16], C[16], D[16];
+
+    if (node_count == 0UL || node_size < 256U) {
         for (uint i = 0; i < 32; ++i) out[gid].Pow256[i] = 0;
         for (uint i = 0; i < 64; ++i) out[gid].Full512[i] = 0;
         return;
     }
     if (header_len + 8U > 256U) return;
-    for (uint i = 0; i < header_len; ++i) seed_input[i] = header[i];
-    for (uint i = 0; i < 8; ++i) seed_input[header_len + i] = (uchar)(nonce >> (8U * i));
-    sha3_512(seed_input, header_len + 8U, seed512);
-    for (uint i = 0; i < 32; ++i) mix[i] = seed512[i];
-    for (ulong r = 0; r < reads_per_hash; ++r) {
-        for (uint i = 0; i < 32; ++i) fnv_input[i] = mix[i];
-        for (uint i = 0; i < 8; ++i) fnv_input[32U + i] = (uchar)(r >> (8U * i));
-        ulong node_idx = colossusx_fnv1a40(fnv_input) % node_count;
-        __global const uchar *node_ptr = dag + node_idx * (ulong)node_size;
-        for (uint i = 0; i < 64; ++i) node[i] = node_ptr[i];
-        for (uint i = 0; i < 32; ++i) {
-            blake_input[i] = mix[i] ^ node[i];
-            blake_input[32U + i] = mix[i] ^ node[32U + i];
+
+    for (uint i = 0; i < header_len; ++i) initial_input[i] = header[i];
+    for (uint i = 0; i < 8; ++i) initial_input[header_len + i] = (uchar)(nonce >> (8U * i));
+    sha3_512(initial_input, header_len + 8U, initial);
+    for (uint i = 0; i < 64; ++i) state[i] = initial[i];
+
+    for (ulong round = 0; round < reads_per_hash; ++round) {
+        uint idx = fnv1a32_kernel((uint)round, load32_le_private(state)) % (uint)node_count;
+        __global const uchar *cell = dag + ((ulong)idx * (ulong)node_size);
+
+        for (uint lane = 0; lane < 16; ++lane) {
+            v0[lane] = (char)state[lane];
+            v1[lane] = (char)state[16U + lane];
+            v2[lane] = (char)state[32U + lane];
+            v3[lane] = (char)state[48U + lane];
+            A[lane] = 0; B[lane] = 0; C[lane] = 0; D[lane] = 0;
         }
-        blake3_hash_64(blake_input, mix);
+
+        for (uint row = 0; row < 16; ++row) {
+            for (uint col = 0; col < 16; ++col) {
+                int m = (int)((char)cell[row * 16U + col]);
+                int mt = (int)((char)cell[col * 16U + row]);
+                A[row] += m * (int)v0[col];
+                B[row] += mt * (int)v1[col];
+                C[row] += m * (int)v2[col];
+                D[row] += mt * (int)v3[col];
+            }
+        }
+
+        for (uint i = 0; i < 64; ++i) salt_in[i] = state[i];
+        for (uint i = 0; i < 8; ++i) salt_in[64U + i] = (uchar)(round >> (8U * i));
+        for (uint i = 0; i < 8; ++i) salt_in[72U + i] = (uchar)(((ulong)idx) >> (8U * i));
+        sha3_512(salt_in, 80U, salt);
+
+        for (uint lane = 0; lane < 16; ++lane) {
+            state[lane] = (uchar)clamp_i8((A[lane] + C[(lane + 5U) & 15U] + (int)((char)salt[lane])) >> 8);
+            state[16U + lane] = (uchar)clamp_i8((B[lane] + D[(lane + 7U) & 15U] + (int)((char)salt[16U + lane])) >> 8);
+            state[32U + lane] = (uchar)clamp_i8((A[(lane + 3U) & 15U] + B[lane] + (int)((char)salt[32U + lane])) >> 8);
+            state[48U + lane] = (uchar)clamp_i8((C[lane] + D[(lane + 11U) & 15U] + (int)((char)salt[48U + lane])) >> 8);
+        }
     }
-    for (uint i = 0; i < 64; ++i) final_input[i] = seed512[i];
-    for (uint i = 0; i < 32; ++i) final_input[64U + i] = mix[i];
-    sha3_512(final_input, 96U, out[gid].Full512);
-    for (uint i = 0; i < 32; ++i) out[gid].Pow256[i] = out[gid].Full512[i];
+
+    sha3_512(state, 64U, mix_digest);
+    for (uint i = 0; i < 64; ++i) final_input[i] = initial[i];
+    for (uint i = 0; i < 64; ++i) final_input[64U + i] = mix_digest[i];
+    blake3_hash_128(final_input, pow256);
+
+    for (uint i = 0; i < 32; ++i) out[gid].Pow256[i] = pow256[i];
+    for (uint i = 0; i < 32; ++i) out[gid].Full512[i] = initial[i];
+    for (uint i = 0; i < 32; ++i) out[gid].Full512[32U + i] = mix_digest[i];
 }
