@@ -134,25 +134,12 @@ func (h *Hash) UnmarshalJSON(data []byte) error {
 }
 
 func (h BlockHeader) EncodeForMining() []byte {
-	buf := make([]byte, 0, 4+4+8+32+8+32+4+len(h.Coinbase)+32+8+32+32+32)
-	buf = binary.BigEndian.AppendUint32(buf, h.Version)
-	buf = binary.BigEndian.AppendUint32(buf, h.AlgorithmVersion)
-	buf = binary.BigEndian.AppendUint64(buf, h.Height)
-	buf = append(buf, h.ParentHash[:]...)
-	buf = binary.BigEndian.AppendUint64(buf, uint64(h.Timestamp))
-	buf = append(buf, h.Target[:]...)
-	buf = binary.BigEndian.AppendUint32(buf, uint32(len(h.Coinbase)))
-	buf = append(buf, []byte(h.Coinbase)...)
-	buf = append(buf, h.EpochSeed[:]...)
-	buf = binary.BigEndian.AppendUint64(buf, h.DAGSizeBytes)
-	buf = append(buf, h.DAGMerkleRoot[:]...)
-	buf = append(buf, h.TxRoot[:]...)
-	buf = append(buf, h.StateRoot[:]...)
-	return buf
+	fixed := h.EncodeForMiningGPUFixedV1()
+	return fixed[:]
 }
 
 func (h BlockHeader) Encode() []byte {
-	buf := h.EncodeForMining()
+	buf := append([]byte{}, h.EncodeForMining()...)
 	buf = binary.BigEndian.AppendUint64(buf, h.Nonce)
 	return buf
 }
