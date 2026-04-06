@@ -123,7 +123,11 @@ func generateDAG(spec Spec, dag []byte, epochSeed []byte, workers int, done *ato
 		if err != nil {
 			return err
 		}
-		return PopulateAppendOnlyScratchpadForResolvedImage(tmp, epochSeed, workers)
+		return PopulateAppendOnlyScratchpadForResolvedImageWithProgress(tmp, epochSeed, workers, func(doneCount, _ uint64) {
+			if done != nil {
+				done.Store(doneCount)
+			}
+		})
 	}
 	if workers <= 0 {
 		workers = runtime.NumCPU()

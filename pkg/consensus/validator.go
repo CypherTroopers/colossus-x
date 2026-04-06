@@ -368,13 +368,22 @@ func (v *Validator) cachedDAGForHeader(header types.BlockHeader, alloc cx.Alloca
 }
 func populateDAGWithLogging(dag *cx.DAG, epochSeed []byte, workers int) error {
 	if dag == nil { return fmt.Errorf("dag cannot be nil") }
-	total := dag.NodeCount(); start := time.Now(); log.Printf("dag generation started nodes=%d workers=%d", total, workers)
+	label := "dag generation"
+	unit := "nodes"
+	if dag.Spec().IsAppendOnlyScratchpad() {
+		label = "scratchpad build"
+		unit = "cells"
+	}
+	total := dag.NodeCount()
+	start := time.Now()
+	log.Printf("%s started %s=%d workers=%d", label, unit, total, workers)
 	var finalDone atomic.Uint64
 	err := cx.PopulateDAGWithProgress(dag, epochSeed, workers, func(done, total uint64) {
-		finalDone.Store(done); if total == 0 { return }
-		log.Printf("dag generation progress: %.1f%% (%d/%d) elapsed=%s", float64(done)*100/float64(total), done, total, time.Since(start).Round(time.Second))
+		finalDone.Store(done)
+		if total == 0 { return }
+		log.Printf("%s progress: %.1f%% (%d/%d %s) elapsed=%s", label, float64(done)*100/float64(total), done, total, unit, time.Since(start).Round(time.Second))
 	})
 	if err != nil { return err }
-	log.Printf("dag generation completed in %s (%d/%d)", time.Since(start).Round(time.Second), finalDone.Load(), total)
+	log.Printf("%s completed in %s (%d/%d %s)", label, time.Since(start).Round(time.Second), finalDone.Load(), total, unit)
 	return nil
 }

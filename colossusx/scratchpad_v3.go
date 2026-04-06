@@ -190,6 +190,10 @@ func (p prefixAccessor) ReadNode(i uint64, out []byte) {
 }
 
 func PopulateAppendOnlyScratchpadForResolvedImage(dag *DAG, epochSeed []byte, workers int) error {
+	return PopulateAppendOnlyScratchpadForResolvedImageWithProgress(dag, epochSeed, workers, nil)
+}
+
+func PopulateAppendOnlyScratchpadForResolvedImageWithProgress(dag *DAG, epochSeed []byte, workers int, progress func(done, total uint64)) error {
 	if dag == nil {
 		return fmt.Errorf("dag cannot be nil")
 	}
@@ -200,6 +204,18 @@ func PopulateAppendOnlyScratchpadForResolvedImage(dag *DAG, epochSeed []byte, wo
 	if err != nil {
 		return err
 	}
+	totalCells := dag.NodeCount()
+	report := func(done uint64) {
+		if progress == nil {
+			return
+		}
+		if done > totalCells {
+			done = totalCells
+		}
+		progress(done, totalCells)
+	}
+	report(0)
+
 	buf := dag.Bytes()
 	nodeSize := dag.Spec().NodeSize
 	baseCells := dag.Spec().initialDAGSize() / nodeSize
@@ -207,7 +223,9 @@ func PopulateAppendOnlyScratchpadForResolvedImage(dag *DAG, epochSeed []byte, wo
 		return fmt.Errorf("base scratchpad exceeds allocation")
 	}
 	seed0 := CycleSeedForCycle(dag.Spec(), 0)
-	if err := PopulateAppendOnlyScratchpadV3Range(dag, seed0[:], [32]byte{}, 0, baseCells, workers, nil); err != nil {
+	if err := PopulateAppendOnlyScratchpadV3Range(dag, seed0[:], [32]byte{}, 0, baseCells, workers, func(done, _ uint64) {
+		report(done)
+	}); err != nil {
 		return err
 	}
 	rootPrev, err := rootForPrefix(buf, nodeSize, baseCells)
@@ -222,7 +240,10 @@ func PopulateAppendOnlyScratchpadForResolvedImage(dag *DAG, epochSeed []byte, wo
 		if end > dag.NodeCount() {
 			return fmt.Errorf("cycle %d full growth exceeds allocation", c)
 		}
-		if err := PopulateAppendOnlyScratchpadV3Range(dag, seed[:], rootPrev, builtCells, end, workers, nil); err != nil {
+		startBuilt := builtCells
+		if err := PopulateAppendOnlyScratchpadV3Range(dag, seed[:], rootPrev, builtCells, end, workers, func(done, _ uint64) {
+			report(startBuilt + done)
+		}); err != nil {
 			return err
 		}
 		builtCells = end
@@ -236,7 +257,10 @@ func PopulateAppendOnlyScratchpadForResolvedImage(dag *DAG, epochSeed []byte, wo
 		if end := builtCells + partialCells; end > dag.NodeCount() {
 			return fmt.Errorf("partial growth exceeds allocation")
 		} else if partialCells > 0 {
-			if err := PopulateAppendOnlyScratchpadV3Range(dag, epochSeed, rootPrev, builtCells, end, workers, nil); err != nil {
+			startBuilt := builtCells
+			if err := PopulateAppendOnlyScratchpadV3Range(dag, epochSeed, rootPrev, builtCells, end, workers, func(done, _ uint64) {
+				report(startBuilt + done)
+			}); err != nil {
 				return err
 			}
 			builtCells = end
@@ -245,6 +269,7 @@ func PopulateAppendOnlyScratchpadForResolvedImage(dag *DAG, epochSeed []byte, wo
 	if builtCells != dag.NodeCount() {
 		return fmt.Errorf("scratchpad build incomplete built=%d want=%d", builtCells, dag.NodeCount())
 	}
+	report(totalCells)
 	return nil
 }
 
