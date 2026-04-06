@@ -7,10 +7,10 @@ import (
 )
 
 const (
-	ColossusXInitialDAGSizeBytes   uint64 = 8 * 1024 * 1024 * 1024
-	DefaultDAGGrowthBytesPerEpoch  uint64 = 256 * 1024 * 1024
+	ColossusXInitialDAGSizeBytes   uint64 = 32 * 1024 * 1024 * 1024
+	DefaultDAGGrowthBytesPerEpoch  uint64 = 48 * 1024 * 1024
 	ColossusXNodeSize              uint64 = 256
-	ColossusXReadsPerHash          uint64 = 128
+	ColossusXReadsPerHash          uint64 = 64
 	ColossusXEpochBlocks           uint64 = 7200
 	ColossusXEpochPrecomputeWindow uint64 = 1000
 	ColossusXEpochGraceBlocks      uint64 = 64
@@ -72,7 +72,7 @@ func ColossusXSpec() Spec {
 		MemoryModelRequired:    MemoryModelUnifiedShared,
 		DeviceExecutionOnly:    true,
 		RoundCommitInterval:    ColossusXRoundCommitPeriod,
-		AlgorithmVersion:       2,
+		AlgorithmVersion:       ColossusXAlgorithmVersionScratchpad,
 	}
 }
 
@@ -115,9 +115,19 @@ func (s Spec) Validate() error {
 	if growth%s.NodeSize != 0 {
 		return fmt.Errorf("dag growth per epoch must be multiple of node size (%d)", s.NodeSize)
 	}
+	if s.IsAppendOnlyScratchpad() {
+		if s.TileSizeBytes == 0 {
+			return errors.New("scratchpad tile size must be > 0")
+		}
+		if initial%s.TileSizeBytes != 0 {
+			return fmt.Errorf("initial dag size must be multiple of tile size (%d)", s.TileSizeBytes)
+		}
+		if growth%s.TileSizeBytes != 0 {
+			return fmt.Errorf("dag growth per epoch must be multiple of tile size (%d)", s.TileSizeBytes)
+		}
+	}
 	switch s.Mode {
 	case ModeColossusX:
-		// colossusx is the only supported mode.
 	default:
 		return fmt.Errorf("unsupported mode %q", s.Mode)
 	}
@@ -154,6 +164,9 @@ func (s Spec) DAGSizeForEpoch(epoch uint64) uint64 {
 }
 
 func (s Spec) DAGSizeForHeight(height uint64) uint64 {
+	if s.IsAppendOnlyScratchpad() {
+		return s.ScratchpadActiveSizeForHeight(height)
+	}
 	if s.EpochBlocks == 0 {
 		return s.DAGSizeForEpoch(0)
 	}
@@ -163,6 +176,9 @@ func (s Spec) DAGSizeForHeight(height uint64) uint64 {
 func (s Spec) ResolvedForHeight(height uint64) Spec {
 	resolved := s
 	resolved.DAGSizeBytes = s.DAGSizeForHeight(height)
+	if resolved.IsAppendOnlyScratchpad() && resolved.ReadsPerHash == 0 {
+		resolved.ReadsPerHash = ColossusXScratchpadReadsPerHash
+	}
 	return resolved
 }
 

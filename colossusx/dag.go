@@ -118,6 +118,13 @@ func generateDAG(spec Spec, dag []byte, epochSeed []byte, workers int, done *ato
 	if uint64(len(dag)) < spec.DAGSizeBytes {
 		return errors.New("managed allocation is smaller than the DAG")
 	}
+	if spec.IsAppendOnlyScratchpad() {
+		tmp, err := NewDAGWithAllocation(spec, &sliceAllocationCompat{buf: dag}, false)
+		if err != nil {
+			return err
+		}
+		return PopulateAppendOnlyScratchpadForResolvedImage(tmp, epochSeed, workers)
+	}
 	if workers <= 0 {
 		workers = runtime.NumCPU()
 	}
@@ -172,6 +179,12 @@ func generateDAG(spec Spec, dag []byte, epochSeed []byte, workers int, done *ato
 	wg.Wait()
 	return nil
 }
+
+type sliceAllocationCompat struct{ buf []byte }
+
+func (a *sliceAllocationCompat) Bytes() []byte { return a.buf }
+func (a *sliceAllocationCompat) Free() error   { a.buf = nil; return nil }
+func (a *sliceAllocationCompat) Name() string  { return "go-slice" }
 
 func PopulateDAG(dag *DAG, epochSeed []byte, workers int) error {
 	return PopulateDAGWithProgress(dag, epochSeed, workers, nil)

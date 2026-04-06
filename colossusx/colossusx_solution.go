@@ -92,6 +92,9 @@ func BuildColossusXSolutionWithProver(spec Spec, header []byte, nonce uint64, da
 }
 
 func BuildColossusXSolutionStreaming(spec Spec, header []byte, nonce uint64, dag DAGAccessor) (ColossusXSolution, [32]byte, error) {
+	if spec.AlgorithmVersion >= ColossusXAlgorithmVersionScratchpad {
+		return BuildColossusXSolutionStreamingV3(spec, header, nonce, dag)
+	}
 	if dag == nil || dag.NodeCount() == 0 {
 		return ColossusXSolution{}, [32]byte{}, errors.New("dag is empty")
 	}
@@ -146,6 +149,9 @@ func BuildColossusXSolutionStreaming(spec Spec, header []byte, nonce uint64, dag
 }
 
 func VerifyColossusXSolution(spec Spec, header []byte, target Target, merkleRoot [32]byte, solution ColossusXSolution) error {
+	if spec.AlgorithmVersion >= ColossusXAlgorithmVersionScratchpad {
+		return VerifyColossusXSolutionV3(spec, header, target, merkleRoot, solution)
+	}
 	initialInput := append([]byte{}, header...)
 	var nonceLE [8]byte
 	binary.LittleEndian.PutUint64(nonceLE[:], solution.Nonce)

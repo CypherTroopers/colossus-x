@@ -147,6 +147,9 @@ func (v *Validator) validateEpochParameters(header types.BlockHeader) error {
 	curSize := v.config.Spec.DAGSizeForHeight(header.Height)
 	curSeed := types.EpochSeedForHeight(v.config.Spec, header.Height)
 	if header.DAGSizeBytes == curSize && header.EpochSeed == curSeed { return nil }
+	if v.config.Spec.IsAppendOnlyScratchpad() {
+		return fmt.Errorf("%w: append-only scratchpad size/seed mismatch", ErrInvalidEpoch)
+	}
 	epochBlocks := v.config.Spec.EpochBlocks
 	if epochBlocks == 0 { return fmt.Errorf("%w: invalid epoch config", ErrInvalidEpoch) }
 	if header.Height < epochBlocks { return fmt.Errorf("%w: dag size/seed mismatch", ErrInvalidEpoch) }
@@ -336,12 +339,31 @@ func (v *Validator) canValidationReuseMiningDAG() bool {
 func (v *Validator) sharedDAGCacheKey(header types.BlockHeader) string { return fmt.Sprintf("%s/%d", header.EpochSeed.String(), header.DAGSizeBytes) }
 func (v *Validator) fallbackValidationDAGCacheKey(header types.BlockHeader, alloc cx.Allocator) string { return fmt.Sprintf("%s/%s/validation", v.sharedDAGCacheKey(header), allocatorName(alloc)) }
 func allocatorName(alloc cx.Allocator) string { if alloc == nil { return "" }; return alloc.Name() }
+func (v *Validator) evictAppendOnlyScratchpadEntries(cache map[string]*cx.DAG, seedPrefix string, keepKey string, keepSize uint64) {
+	for k, dag := range cache {
+		if k == keepKey || dag == nil {
+			continue
+		}
+		if !strings.HasPrefix(k, seedPrefix+"/") {
+			continue
+		}
+		if dag.Spec().DAGSizeBytes >= keepSize {
+			continue
+		}
+		_ = dag.Close()
+		delete(cache, k)
+		delete(v.colossusxMerkleRoots, k)
+	}
+}
 func (v *Validator) cachedDAGForHeader(header types.BlockHeader, alloc cx.Allocator, cache map[string]*cx.DAG, key string) (*cx.DAG, error) {
 	v.mu.Lock(); defer v.mu.Unlock(); if dag, ok := cache[key]; ok { return dag, nil }
 	spec := v.config.Spec.ResolvedForHeight(header.Height); spec.DAGSizeBytes = header.DAGSizeBytes
 	dag, err := cx.NewDAGWithAllocator(spec, alloc); if err != nil { return nil, err }
 	if err := populateDAGWithLogging(dag, header.EpochSeed[:], v.workers); err != nil { _ = dag.Close(); return nil, err }
 	cache[key] = dag; if spec.AlgorithmVersion >= 2 || spec.Mode == cx.ModeColossusX { v.colossusxMerkleRoots[key] = dagMerkleRootStreaming(dag) }
+	if spec.IsAppendOnlyScratchpad() {
+		v.evictAppendOnlyScratchpadEntries(cache, header.EpochSeed.String(), key, spec.DAGSizeBytes)
+	}
 	return dag, nil
 }
 func populateDAGWithLogging(dag *cx.DAG, epochSeed []byte, workers int) error {
